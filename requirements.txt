@@ -1,0 +1,7 @@
+langgraph
+langchain
+chromadb
+pydantic
+mcp
+langchain-openai
+langchain-google-genai
