@@ -399,3 +399,44 @@ FodyWeavers.xsd
 
 # JetBrains Rider
 *.sln.iml
+
+# -----------------------------------------------------------------------------
+# Python + LangGraph project-specific ignores
+# -----------------------------------------------------------------------------
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Python caches and tooling
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Build/distribution artifacts
+build/
+dist/
+*.egg-info/
+
+# Local runtime/config artifacts
+.env
+.env.*
+
+# Jupyter notebooks/checkpoints
+.ipynb_checkpoints/
+
+# Project runtime outputs
+outputs/
+graph_visualization.png
+
+# Local vector DB persistence
+chroma_db/
+chroma_db_test/
