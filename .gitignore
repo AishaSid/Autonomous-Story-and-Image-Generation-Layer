@@ -21,12 +21,14 @@ venv/
 # Runtime databases/artifacts
 chroma_db/
 
-# Phase 2 generated outputs
-raw_scenes/
+# Phase 2 generated outputs (keep folder placeholders)
+raw_scenes/*
+!raw_scenes/.gitkeep
 audio_tracks/
 intermediate_frames/
 lip_synced_scenes/
-outputs/
+output/*
+!output/.gitkeep
 
 # Local generated assets
 graph_visualization.png
