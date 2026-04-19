@@ -7,24 +7,25 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Annotated, Any, TypedDict
 
+import cv2
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Send
 from pydantic import BaseModel, Field, ValidationError
 
 try:
+    from src.agents.video_gen import generate_scene_video
     from tools.face_swapper import face_swapper
     from tools.identity_validator import identity_validator
     from tools.lip_sync_aligner import lip_sync_aligner
-    from tools.video_generation import query_stock_footage
     from tools.voice_cloning_synthesizer import voice_cloning_synthesizer
 except ModuleNotFoundError:
     project_root = Path(__file__).resolve().parents[2]
     if str(project_root) not in sys.path:
         sys.path.insert(0, str(project_root))
+    from src.agents.video_gen import generate_scene_video
     from tools.face_swapper import face_swapper
     from tools.identity_validator import identity_validator
     from tools.lip_sync_aligner import lip_sync_aligner
-    from tools.video_generation import query_stock_footage
     from tools.voice_cloning_synthesizer import voice_cloning_synthesizer
 
 
@@ -96,7 +97,15 @@ def _load_character_db(character_db_path: Path) -> CharacterDBModel:
 def _discover_image_assets(image_assets_dir: Path) -> list[str]:
     if not image_assets_dir.exists():
         return []
-    return [str(path) for path in sorted(image_assets_dir.glob("*.png"))]
+    image_paths = list(image_assets_dir.glob("*.png"))
+    image_paths.extend(list(image_assets_dir.glob("*.jpg")))
+    image_paths.extend(list(image_assets_dir.glob("*.jpeg")))
+
+    valid_assets: list[str] = []
+    for image_path in sorted(image_paths):
+        if cv2.imread(str(image_path)) is not None:
+            valid_assets.append(str(image_path))
+    return valid_assets
 
 
 def _select_character_profile(character_db: CharacterDBModel, scene_index: int) -> dict[str, Any]:
@@ -365,18 +374,16 @@ def _voice_synth_node(state: BranchInputState) -> dict[str, Any]:
 def _video_gen_node(state: BranchInputState) -> dict[str, Any]:
     task = state["scene_task"]
     scene_id = task["scene_id"]
-    summary = task["parallel_branches"]["video"]["inputs"]["summary"]
-    visual_cues = task["parallel_branches"]["video"]["inputs"]["visual_cues"]
     reference_image_paths = task["parallel_branches"]["video"]["inputs"].get("reference_image_paths", [])
     character_profile = task["parallel_branches"]["video"]["inputs"].get("character_profile", {})
+    image_assets_dir = task.get("asset_context", {}).get("image_assets_dir", "")
 
-    generated_video = query_stock_footage(
+    generated_video, source_image_path = generate_scene_video(
         scene_id=scene_id,
-        summary=summary,
-        visual_cues=visual_cues,
         output_path=task["parallel_branches"]["video"]["output"],
         reference_image_paths=reference_image_paths,
         character_profile=character_profile,
+        image_assets_dir=image_assets_dir,
     )
 
     return {
@@ -384,6 +391,7 @@ def _video_gen_node(state: BranchInputState) -> dict[str, Any]:
             {
                 "scene_id": scene_id,
                 "video_path": generated_video,
+                "source_image_path": source_image_path,
                 "status": "completed",
             }
         ]
@@ -411,11 +419,22 @@ def _face_swap_node_factory(checkpoint_dir: str):
         for task in tasks:
             scene_id = task["scene_id"]
             video_path = video_by_scene.get(scene_id)
+            character_profile = task.get("asset_context", {}).get("character_profile", {})
+            expected_character = str(character_profile.get("name", ""))
+            reference_image_paths = task.get("asset_context", {}).get("reference_image_paths", [])
+            expected_image_path = reference_image_paths[0] if reference_image_paths else ""
+            character_db_path = str(task.get("asset_context", {}).get("character_db_path", ""))
             if not video_path:
                 errors.append(f"Missing video output for {scene_id}.")
                 continue
 
-            identity_ok = identity_validator(scene_id=scene_id, video_path=video_path)
+            identity_ok = identity_validator(
+                scene_id=scene_id,
+                video_path=video_path,
+                character_db_path=character_db_path,
+                expected_character=expected_character,
+                expected_image_path=expected_image_path,
+            )
             if not identity_ok:
                 errors.append(f"Identity validation failed for {scene_id}.")
                 continue
@@ -430,6 +449,8 @@ def _face_swap_node_factory(checkpoint_dir: str):
                     "scene_id": scene_id,
                     "video_path": mapped_video_path,
                     "identity_validated": True,
+                    "expected_character": expected_character,
+                    "reference_image_path": expected_image_path,
                     "status": "completed",
                 }
             )
