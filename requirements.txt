@@ -3,3 +3,4 @@ langchain
 pydantic
 opencv-python
 numpy
+pyttsx3

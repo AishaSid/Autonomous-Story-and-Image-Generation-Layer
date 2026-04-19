@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import math
+import time
+import wave
 from pathlib import Path
+from typing import Any
 
 import cv2
 
@@ -49,16 +53,61 @@ def _fit_to_frame(image, width: int, height: int):
     return resized[y_start : y_start + height, x_start : x_start + width]
 
 
+def _dialogue_entry_to_line(entry: Any) -> str:
+    if isinstance(entry, str):
+        return entry.strip()
+    if isinstance(entry, dict):
+        for key in ("line", "text", "dialogue", "utterance", "content"):
+            value = entry.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    return ""
+
+
+def _estimate_duration_from_dialogue(dialogue_beats: list[Any]) -> float:
+    lines = [_dialogue_entry_to_line(entry) for entry in dialogue_beats]
+    transcript = " ".join([line for line in lines if line])
+    word_count = len([word for word in transcript.split() if word.strip()])
+    # Approximate natural speech at ~150 words per minute.
+    estimated_seconds = (word_count / 150.0) * 60.0
+    return max(estimated_seconds, 1.2)
+
+
+def _duration_from_audio(audio_path: str, fallback_seconds: float) -> float:
+    audio_file = Path(audio_path)
+    if not audio_file.exists():
+        # Voice and video branches run concurrently; wait briefly for the corresponding wav.
+        for _ in range(120):
+            if audio_file.exists():
+                break
+            time.sleep(0.1)
+
+    if not audio_file.exists():
+        return fallback_seconds
+
+    for _ in range(120):
+        try:
+            with wave.open(str(audio_file), "rb") as wav_file:
+                frame_count = wav_file.getnframes()
+                frame_rate = wav_file.getframerate() or 22050
+                return max(frame_count / float(frame_rate), 0.5)
+        except Exception:
+            time.sleep(0.1)
+
+    return fallback_seconds
+
+
 def generate_scene_video(
     scene_id: str,
     output_path: str,
     reference_image_paths: list[str],
     character_profile: dict,
     image_assets_dir: str,
+    dialogue_beats: list[Any],
+    audio_path: str,
     fps: int = 24,
-    duration_seconds: float = 1.2,
 ) -> tuple[str, str]:
-    """Generate a valid MP4 where the selected character image is the frame background."""
+    """Generate a valid MP4 with real character image for the audio-corresponding duration."""
     source_image_path = _resolve_reference_image(
         reference_image_paths=reference_image_paths,
         character_profile=character_profile,
@@ -84,7 +133,9 @@ def generate_scene_video(
     if not writer.isOpened():
         raise RuntimeError(f"Could not open video writer for {destination}")
 
-    frame_count = max(int(duration_seconds * fps), 1)
+    fallback_duration = _estimate_duration_from_dialogue(dialogue_beats)
+    duration_seconds = _duration_from_audio(audio_path=audio_path, fallback_seconds=fallback_duration)
+    frame_count = max(int(math.ceil(duration_seconds * fps)), 1)
     for _ in range(frame_count):
         writer.write(base_frame)
 

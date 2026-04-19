@@ -33,7 +33,7 @@ class SceneModel(BaseModel):
     scene_id: str
     title: str
     summary: str
-    dialogue_beats: list[str] = Field(default_factory=list)
+    dialogue_beats: list[Any] = Field(default_factory=list)
     visual_cues: list[str] = Field(default_factory=list)
 
 
@@ -377,6 +377,8 @@ def _video_gen_node(state: BranchInputState) -> dict[str, Any]:
     reference_image_paths = task["parallel_branches"]["video"]["inputs"].get("reference_image_paths", [])
     character_profile = task["parallel_branches"]["video"]["inputs"].get("character_profile", {})
     image_assets_dir = task.get("asset_context", {}).get("image_assets_dir", "")
+    dialogue_beats = task["parallel_branches"]["audio"]["inputs"].get("dialogue_beats", [])
+    audio_path = task["parallel_branches"]["audio"]["output"]
 
     generated_video, source_image_path = generate_scene_video(
         scene_id=scene_id,
@@ -384,6 +386,8 @@ def _video_gen_node(state: BranchInputState) -> dict[str, Any]:
         reference_image_paths=reference_image_paths,
         character_profile=character_profile,
         image_assets_dir=image_assets_dir,
+        dialogue_beats=dialogue_beats,
+        audio_path=audio_path,
     )
 
     return {

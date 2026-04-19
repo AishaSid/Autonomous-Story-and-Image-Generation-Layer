@@ -1,49 +1,62 @@
 from __future__ import annotations
 
-import math
-import wave
-from array import array
 from pathlib import Path
+from typing import Any
+
+import pyttsx3
+
+try:
+    import pythoncom
+except Exception:  # pragma: no cover - only relevant on Windows hosts.
+    pythoncom = None
 
 
-def _write_placeholder_wav(output_path: Path, duration_seconds: float = 1.2) -> None:
-    sample_rate = 22050
-    frequency = 220.0
-    samples = int(sample_rate * duration_seconds)
-    frames = array("h")
+def _dialogue_entry_to_line(entry: Any) -> str:
+    if isinstance(entry, str):
+        return entry.strip()
 
-    for i in range(samples):
-        # Low-amplitude tone placeholder to represent synthesized speech output.
-        value = int(1600 * math.sin(2 * math.pi * frequency * (i / sample_rate)))
-        frames.append(value)
+    if isinstance(entry, dict):
+        for key in ("line", "text", "dialogue", "utterance", "content"):
+            value = entry.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
 
-    with wave.open(str(output_path), "wb") as wav_file:
-        wav_file.setnchannels(1)
-        wav_file.setsampwidth(2)
-        wav_file.setframerate(sample_rate)
-        wav_file.writeframes(frames.tobytes())
+    return ""
+
+
+def _dialogue_to_text(dialogue_beats: list[Any], scene_id: str) -> str:
+    lines = [_dialogue_entry_to_line(entry) for entry in dialogue_beats]
+    normalized = [line for line in lines if line]
+    if not normalized:
+        return f"Scene {scene_id} dialogue."
+    return " ".join(normalized)
 
 
 def voice_cloning_synthesizer(
     scene_id: str,
-    dialogue_beats: list[str],
+    dialogue_beats: list[Any],
     output_path: str,
 ) -> str:
-    """Mock MCP tool for voice cloning/TTS in CPU-only environments."""
+    """CPU-friendly speech synthesis using pyttsx3 from manifest dialogue lines."""
     destination = Path(output_path)
     destination.parent.mkdir(parents=True, exist_ok=True)
 
-    transcript_preview = " ".join(dialogue_beats)[:140]
+    speech_text = _dialogue_to_text(dialogue_beats=dialogue_beats, scene_id=scene_id)
+
+    if pythoncom is not None:
+        pythoncom.CoInitialize()
 
     try:
-        # Optional CPU fallback if pyttsx3 is available in the environment.
-        import pyttsx3  # type: ignore
-
         engine = pyttsx3.init()
-        engine.save_to_file(transcript_preview or f"Scene {scene_id}", str(destination))
+        engine.setProperty("rate", 165)
+        engine.setProperty("volume", 0.95)
+        engine.save_to_file(speech_text, str(destination))
         engine.runAndWait()
-    except Exception:
-        # API-style placeholder fallback: emit a valid wav container.
-        _write_placeholder_wav(destination)
+    finally:
+        if pythoncom is not None:
+            pythoncom.CoUninitialize()
+
+    if not destination.exists() or destination.stat().st_size == 0:
+        raise RuntimeError(f"TTS generation failed for scene {scene_id}")
 
     return str(destination)
