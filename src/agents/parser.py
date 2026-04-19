@@ -75,6 +75,48 @@ class BranchInputState(TypedDict):
     scene_task: dict[str, Any]
 
 
+def _invoke_graph_tool(tool_name: str, **kwargs: Any) -> Any:
+    tool_registry = {
+        "voice_cloning_synthesizer": voice_cloning_synthesizer,
+        "video_generation_agent": generate_scene_video,
+        "face_swap_agent": face_swap_validate_and_map,
+        "lip_sync_aligner": lip_sync_aligner,
+    }
+    if tool_name not in tool_registry:
+        raise ValueError(f"Unknown graph tool: {tool_name}")
+    return tool_registry[tool_name](**kwargs)
+
+
+def _commit_agent_checkpoint(step: str, payload: dict[str, Any], checkpoint_dir: str = "state/checkpoints") -> None:
+    transient_state: ParserState = {
+        "shared_memory": {},
+        "checkpoints": [],
+    }
+    commit_memory(transient_state, step=step, payload=payload, checkpoint_dir=checkpoint_dir)
+
+
+def _write_task_graph_log(
+    all_tasks: list[dict[str, Any]],
+    pending_tasks: list[dict[str, Any]],
+    skipped_scenes: list[str],
+    logs_dir: str = "task_graph_logs",
+) -> str:
+    root = Path(logs_dir)
+    root.mkdir(parents=True, exist_ok=True)
+    log_path = root / f"task_graph_{_utc_timestamp()}.json"
+    payload = {
+        "generated_at": _utc_timestamp(),
+        "total_tasks": len(all_tasks),
+        "pending_tasks": len(pending_tasks),
+        "skipped_scenes": skipped_scenes,
+        "scene_ids": [task["scene_id"] for task in all_tasks],
+        "pending_scene_ids": [task["scene_id"] for task in pending_tasks],
+        "task_graph": all_tasks,
+    }
+    log_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    return str(log_path)
+
+
 def _phase1_root_for_manifest(manifest_path: str) -> Path:
     return Path(manifest_path).resolve().parent
 
@@ -318,15 +360,34 @@ def _task_graph_node_factory(checkpoint_dir: str):
             state.get("character_db_path", ""),
             state.get("image_assets_dir", ""),
         )
-        state["tasks"] = tasks
+
+        skipped_scenes: list[str] = []
+        pending_tasks: list[dict[str, Any]] = []
+        for task in tasks:
+            scene_id = task["scene_id"]
+            completed_output = Path(f"output/raw_scenes/{scene_id}.mp4")
+            if completed_output.exists() and completed_output.stat().st_size > 0:
+                skipped_scenes.append(scene_id)
+                continue
+            pending_tasks.append(task)
+
+        task_graph_log_path = _write_task_graph_log(
+            all_tasks=tasks,
+            pending_tasks=pending_tasks,
+            skipped_scenes=skipped_scenes,
+        )
+
+        state["tasks"] = pending_tasks
 
         state = commit_memory(
             state,
             "task_graph_generated",
             {
-                "tasks": len(tasks),
-                "scene_ids": [task["scene_id"] for task in tasks],
+                "tasks": len(pending_tasks),
+                "scene_ids": [task["scene_id"] for task in pending_tasks],
                 "image_assets_bound": len(image_assets),
+                "skipped_scenes": skipped_scenes,
+                "task_graph_log": task_graph_log_path,
             },
             checkpoint_dir=checkpoint_dir,
         )
@@ -352,10 +413,20 @@ def _voice_synth_node(state: BranchInputState) -> dict[str, Any]:
     scene_id = task["scene_id"]
     dialogue_beats = task["parallel_branches"]["audio"]["inputs"]["dialogue_beats"]
 
-    synthesized_audio = voice_cloning_synthesizer(
+    synthesized_audio = _invoke_graph_tool(
+        "voice_cloning_synthesizer",
         scene_id=scene_id,
         dialogue_beats=dialogue_beats,
         output_path=task["parallel_branches"]["audio"]["output"],
+    )
+
+    _commit_agent_checkpoint(
+        step="voice_synth_complete",
+        payload={
+            "scene_id": scene_id,
+            "audio_path": synthesized_audio,
+            "status": "completed",
+        },
     )
 
     return {
@@ -378,7 +449,8 @@ def _video_gen_node(state: BranchInputState) -> dict[str, Any]:
     dialogue_beats = task["parallel_branches"]["audio"]["inputs"].get("dialogue_beats", [])
     audio_path = task["parallel_branches"]["audio"]["output"]
 
-    generated_video, source_image_path = generate_scene_video(
+    generated_video, source_image_path = _invoke_graph_tool(
+        "video_generation_agent",
         scene_id=scene_id,
         output_path=task["parallel_branches"]["video"]["output"],
         reference_image_paths=reference_image_paths,
@@ -386,6 +458,16 @@ def _video_gen_node(state: BranchInputState) -> dict[str, Any]:
         image_assets_dir=image_assets_dir,
         dialogue_beats=dialogue_beats,
         audio_path=audio_path,
+    )
+
+    _commit_agent_checkpoint(
+        step="video_gen_complete",
+        payload={
+            "scene_id": scene_id,
+            "video_path": generated_video,
+            "source_image_path": source_image_path,
+            "status": "completed",
+        },
     )
 
     return {
@@ -430,7 +512,8 @@ def _face_swap_node_factory(checkpoint_dir: str):
                 errors.append(f"Missing video output for {scene_id}.")
                 continue
 
-            mapped_video_path, identity_ok, validated_character, emotion_tag = face_swap_validate_and_map(
+            mapped_video_path, identity_ok, validated_character, emotion_tag = _invoke_graph_tool(
+                "face_swap_agent",
                 scene_id=scene_id,
                 input_video_path=video_path,
                 output_path=f"output/face_swapped/{scene_id}.mp4",
@@ -512,7 +595,8 @@ def _lip_sync_node_factory(checkpoint_dir: str):
                 errors.append(f"Fusion inputs missing for {scene_id}.")
                 continue
 
-            fused_path = lip_sync_aligner(
+            fused_path = _invoke_graph_tool(
+                "lip_sync_aligner",
                 scene_id=scene_id,
                 audio_path=audio_path,
                 video_path=video_path,

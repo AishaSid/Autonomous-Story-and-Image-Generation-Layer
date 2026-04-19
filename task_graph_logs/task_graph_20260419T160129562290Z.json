@@ -1,0 +1,230 @@
+{
+  "generated_at": "20260419T160129562335Z",
+  "total_tasks": 2,
+  "pending_tasks": 0,
+  "skipped_scenes": [
+    "scene_001",
+    "scene_002"
+  ],
+  "scene_ids": [
+    "scene_001",
+    "scene_002"
+  ],
+  "pending_scene_ids": [],
+  "task_graph": [
+    {
+      "scene_id": "scene_001",
+      "scene_index": 0,
+      "parallel_branches": {
+        "audio": {
+          "agent": "voice_synthesis_agent",
+          "inputs": {
+            "dialogue_beats": [
+              "Character A establishes intent.",
+              "Character B introduces conflict.",
+              "Both characters align on a next action."
+            ]
+          },
+          "output": "output/scene_001.wav"
+        },
+        "video": {
+          "agent": "video_generation_agent",
+          "inputs": {
+            "summary": "A mock progression of the prompt: An explorer enters an ancient floating city at sunrise.",
+            "visual_cues": [
+              "Wide establishing shot",
+              "Medium over-the-shoulder dialogue",
+              "Close-up emotional reaction"
+            ],
+            "visual_cue_assets": [
+              {
+                "visual_cue": "Wide establishing shot",
+                "image_path": "K:\\8 semester\\Github Repos\\AGENTIC\\HOMEWORK\\Autonomous Story and Image Generation Layer\\phase1_inputs\\image_assets\\Lead.jpg"
+              },
+              {
+                "visual_cue": "Medium over-the-shoulder dialogue",
+                "image_path": "K:\\8 semester\\Github Repos\\AGENTIC\\HOMEWORK\\Autonomous Story and Image Generation Layer\\phase1_inputs\\image_assets\\Lead.jpg"
+              },
+              {
+                "visual_cue": "Close-up emotional reaction",
+                "image_path": "K:\\8 semester\\Github Repos\\AGENTIC\\HOMEWORK\\Autonomous Story and Image Generation Layer\\phase1_inputs\\image_assets\\Lead.jpg"
+              }
+            ],
+            "reference_image_paths": [
+              "K:\\8 semester\\Github Repos\\AGENTIC\\HOMEWORK\\Autonomous Story and Image Generation Layer\\phase1_inputs\\image_assets\\Lead.jpg",
+              "K:\\8 semester\\Github Repos\\AGENTIC\\HOMEWORK\\Autonomous Story and Image Generation Layer\\phase1_inputs\\image_assets\\Lead.jpg",
+              "K:\\8 semester\\Github Repos\\AGENTIC\\HOMEWORK\\Autonomous Story and Image Generation Layer\\phase1_inputs\\image_assets\\Lead.jpg"
+            ],
+            "character_profile": {
+              "name": "Lead",
+              "personality_traits": [
+                "optimistic",
+                "curious",
+                "story_driven"
+              ],
+              "appearance_description": "Derived from prompt: An explorer enters an ancient floating city at sunrise.",
+              "reference_style": "bright handheld commercial, soft bloom"
+            }
+          },
+          "output": "raw_scenes/scene_001.mp4"
+        }
+      },
+      "asset_context": {
+        "phase1_root": "K:\\8 semester\\Github Repos\\AGENTIC\\HOMEWORK\\Autonomous Story and Image Generation Layer\\phase1_inputs",
+        "character_db_path": "K:\\8 semester\\Github Repos\\AGENTIC\\HOMEWORK\\Autonomous Story and Image Generation Layer\\phase1_inputs\\character_db.json",
+        "image_assets_dir": "K:\\8 semester\\Github Repos\\AGENTIC\\HOMEWORK\\Autonomous Story and Image Generation Layer\\phase1_inputs\\image_assets",
+        "character_profile": {
+          "name": "Lead",
+          "personality_traits": [
+            "optimistic",
+            "curious",
+            "story_driven"
+          ],
+          "appearance_description": "Derived from prompt: An explorer enters an ancient floating city at sunrise.",
+          "reference_style": "bright handheld commercial, soft bloom"
+        },
+        "visual_cue_assets": [
+          {
+            "visual_cue": "Wide establishing shot",
+            "image_path": "K:\\8 semester\\Github Repos\\AGENTIC\\HOMEWORK\\Autonomous Story and Image Generation Layer\\phase1_inputs\\image_assets\\Lead.jpg"
+          },
+          {
+            "visual_cue": "Medium over-the-shoulder dialogue",
+            "image_path": "K:\\8 semester\\Github Repos\\AGENTIC\\HOMEWORK\\Autonomous Story and Image Generation Layer\\phase1_inputs\\image_assets\\Lead.jpg"
+          },
+          {
+            "visual_cue": "Close-up emotional reaction",
+            "image_path": "K:\\8 semester\\Github Repos\\AGENTIC\\HOMEWORK\\Autonomous Story and Image Generation Layer\\phase1_inputs\\image_assets\\Lead.jpg"
+          }
+        ],
+        "reference_image_paths": [
+          "K:\\8 semester\\Github Repos\\AGENTIC\\HOMEWORK\\Autonomous Story and Image Generation Layer\\phase1_inputs\\image_assets\\Lead.jpg",
+          "K:\\8 semester\\Github Repos\\AGENTIC\\HOMEWORK\\Autonomous Story and Image Generation Layer\\phase1_inputs\\image_assets\\Lead.jpg",
+          "K:\\8 semester\\Github Repos\\AGENTIC\\HOMEWORK\\Autonomous Story and Image Generation Layer\\phase1_inputs\\image_assets\\Lead.jpg"
+        ]
+      },
+      "post_processors": [
+        {
+          "agent": "face_swap_agent",
+          "depends_on": [
+            "video"
+          ]
+        },
+        {
+          "agent": "lip_sync_agent",
+          "depends_on": [
+            "audio",
+            "video"
+          ]
+        }
+      ]
+    },
+    {
+      "scene_id": "scene_002",
+      "scene_index": 1,
+      "parallel_branches": {
+        "audio": {
+          "agent": "voice_synthesis_agent",
+          "inputs": {
+            "dialogue_beats": [
+              "Character A establishes intent.",
+              "Character B introduces conflict.",
+              "Both characters align on a next action."
+            ]
+          },
+          "output": "output/scene_002.wav"
+        },
+        "video": {
+          "agent": "video_generation_agent",
+          "inputs": {
+            "summary": "A mock progression of the prompt: An explorer enters an ancient floating city at sunrise.",
+            "visual_cues": [
+              "Wide establishing shot",
+              "Medium over-the-shoulder dialogue",
+              "Close-up emotional reaction"
+            ],
+            "visual_cue_assets": [
+              {
+                "visual_cue": "Wide establishing shot",
+                "image_path": "K:\\8 semester\\Github Repos\\AGENTIC\\HOMEWORK\\Autonomous Story and Image Generation Layer\\phase1_inputs\\image_assets\\Lead.jpg"
+              },
+              {
+                "visual_cue": "Medium over-the-shoulder dialogue",
+                "image_path": "K:\\8 semester\\Github Repos\\AGENTIC\\HOMEWORK\\Autonomous Story and Image Generation Layer\\phase1_inputs\\image_assets\\Lead.jpg"
+              },
+              {
+                "visual_cue": "Close-up emotional reaction",
+                "image_path": "K:\\8 semester\\Github Repos\\AGENTIC\\HOMEWORK\\Autonomous Story and Image Generation Layer\\phase1_inputs\\image_assets\\Lead.jpg"
+              }
+            ],
+            "reference_image_paths": [
+              "K:\\8 semester\\Github Repos\\AGENTIC\\HOMEWORK\\Autonomous Story and Image Generation Layer\\phase1_inputs\\image_assets\\Lead.jpg",
+              "K:\\8 semester\\Github Repos\\AGENTIC\\HOMEWORK\\Autonomous Story and Image Generation Layer\\phase1_inputs\\image_assets\\Lead.jpg",
+              "K:\\8 semester\\Github Repos\\AGENTIC\\HOMEWORK\\Autonomous Story and Image Generation Layer\\phase1_inputs\\image_assets\\Lead.jpg"
+            ],
+            "character_profile": {
+              "name": "Lead",
+              "personality_traits": [
+                "optimistic",
+                "curious",
+                "story_driven"
+              ],
+              "appearance_description": "Derived from prompt: An explorer enters an ancient floating city at sunrise.",
+              "reference_style": "bright handheld commercial, soft bloom"
+            }
+          },
+          "output": "raw_scenes/scene_002.mp4"
+        }
+      },
+      "asset_context": {
+        "phase1_root": "K:\\8 semester\\Github Repos\\AGENTIC\\HOMEWORK\\Autonomous Story and Image Generation Layer\\phase1_inputs",
+        "character_db_path": "K:\\8 semester\\Github Repos\\AGENTIC\\HOMEWORK\\Autonomous Story and Image Generation Layer\\phase1_inputs\\character_db.json",
+        "image_assets_dir": "K:\\8 semester\\Github Repos\\AGENTIC\\HOMEWORK\\Autonomous Story and Image Generation Layer\\phase1_inputs\\image_assets",
+        "character_profile": {
+          "name": "Lead",
+          "personality_traits": [
+            "optimistic",
+            "curious",
+            "story_driven"
+          ],
+          "appearance_description": "Derived from prompt: An explorer enters an ancient floating city at sunrise.",
+          "reference_style": "bright handheld commercial, soft bloom"
+        },
+        "visual_cue_assets": [
+          {
+            "visual_cue": "Wide establishing shot",
+            "image_path": "K:\\8 semester\\Github Repos\\AGENTIC\\HOMEWORK\\Autonomous Story and Image Generation Layer\\phase1_inputs\\image_assets\\Lead.jpg"
+          },
+          {
+            "visual_cue": "Medium over-the-shoulder dialogue",
+            "image_path": "K:\\8 semester\\Github Repos\\AGENTIC\\HOMEWORK\\Autonomous Story and Image Generation Layer\\phase1_inputs\\image_assets\\Lead.jpg"
+          },
+          {
+            "visual_cue": "Close-up emotional reaction",
+            "image_path": "K:\\8 semester\\Github Repos\\AGENTIC\\HOMEWORK\\Autonomous Story and Image Generation Layer\\phase1_inputs\\image_assets\\Lead.jpg"
+          }
+        ],
+        "reference_image_paths": [
+          "K:\\8 semester\\Github Repos\\AGENTIC\\HOMEWORK\\Autonomous Story and Image Generation Layer\\phase1_inputs\\image_assets\\Lead.jpg",
+          "K:\\8 semester\\Github Repos\\AGENTIC\\HOMEWORK\\Autonomous Story and Image Generation Layer\\phase1_inputs\\image_assets\\Lead.jpg",
+          "K:\\8 semester\\Github Repos\\AGENTIC\\HOMEWORK\\Autonomous Story and Image Generation Layer\\phase1_inputs\\image_assets\\Lead.jpg"
+        ]
+      },
+      "post_processors": [
+        {
+          "agent": "face_swap_agent",
+          "depends_on": [
+            "video"
+          ]
+        },
+        {
+          "agent": "lip_sync_agent",
+          "depends_on": [
+            "audio",
+            "video"
+          ]
+        }
+      ]
+    }
+  ]
+}
