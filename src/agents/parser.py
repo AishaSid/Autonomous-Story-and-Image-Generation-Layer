@@ -13,18 +13,16 @@ from langgraph.types import Send
 from pydantic import BaseModel, Field, ValidationError
 
 try:
+    from src.agents.face_swap import face_swap_validate_and_map
     from src.agents.video_gen import generate_scene_video
-    from tools.face_swapper import face_swapper
-    from tools.identity_validator import identity_validator
     from tools.lip_sync_aligner import lip_sync_aligner
     from tools.voice_cloning_synthesizer import voice_cloning_synthesizer
 except ModuleNotFoundError:
     project_root = Path(__file__).resolve().parents[2]
     if str(project_root) not in sys.path:
         sys.path.insert(0, str(project_root))
+    from src.agents.face_swap import face_swap_validate_and_map
     from src.agents.video_gen import generate_scene_video
-    from tools.face_swapper import face_swapper
-    from tools.identity_validator import identity_validator
     from tools.lip_sync_aligner import lip_sync_aligner
     from tools.voice_cloning_synthesizer import voice_cloning_synthesizer
 
@@ -432,28 +430,25 @@ def _face_swap_node_factory(checkpoint_dir: str):
                 errors.append(f"Missing video output for {scene_id}.")
                 continue
 
-            identity_ok = identity_validator(
+            mapped_video_path, identity_ok, validated_character, emotion_tag = face_swap_validate_and_map(
                 scene_id=scene_id,
-                video_path=video_path,
+                input_video_path=video_path,
+                output_path=f"output/face_swapped/{scene_id}.mp4",
+                scene_task=task,
                 character_db_path=character_db_path,
-                expected_character=expected_character,
-                expected_image_path=expected_image_path,
             )
             if not identity_ok:
                 errors.append(f"Identity validation failed for {scene_id}.")
                 continue
 
-            mapped_video_path = face_swapper(
-                scene_id=scene_id,
-                input_video_path=video_path,
-                output_path=f"output/face_swapped/{scene_id}.mp4",
-            )
             face_swap_outputs.append(
                 {
                     "scene_id": scene_id,
                     "video_path": mapped_video_path,
                     "identity_validated": True,
                     "expected_character": expected_character,
+                    "validated_character": validated_character,
+                    "emotion_tag": emotion_tag,
                     "reference_image_path": expected_image_path,
                     "status": "completed",
                 }
