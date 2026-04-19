@@ -12,12 +12,18 @@ from langgraph.types import Send
 from pydantic import BaseModel, Field, ValidationError
 
 try:
+    from tools.face_swapper import face_swapper
+    from tools.identity_validator import identity_validator
+    from tools.lip_sync_aligner import lip_sync_aligner
     from tools.video_generation import query_stock_footage
     from tools.voice_cloning_synthesizer import voice_cloning_synthesizer
 except ModuleNotFoundError:
     project_root = Path(__file__).resolve().parents[2]
     if str(project_root) not in sys.path:
         sys.path.insert(0, str(project_root))
+    from tools.face_swapper import face_swapper
+    from tools.identity_validator import identity_validator
+    from tools.lip_sync_aligner import lip_sync_aligner
     from tools.video_generation import query_stock_footage
     from tools.voice_cloning_synthesizer import voice_cloning_synthesizer
 
@@ -43,6 +49,8 @@ class ParserState(TypedDict, total=False):
     tasks: list[dict[str, Any]]
     voice_outputs: Annotated[list[dict[str, Any]], operator.add]
     video_outputs: Annotated[list[dict[str, Any]], operator.add]
+    face_swap_outputs: Annotated[list[dict[str, Any]], operator.add]
+    fused_outputs: Annotated[list[dict[str, Any]], operator.add]
     shared_memory: dict[str, Any]
     checkpoints: list[str]
     errors: Annotated[list[str], operator.add]
@@ -250,23 +258,190 @@ def _video_gen_node(state: BranchInputState) -> dict[str, Any]:
     }
 
 
-def _finalize_node_factory(checkpoint_dir: str):
-    def _finalize_node(state: ParserState) -> dict[str, Any]:
-        task_count = len(state.get("tasks", []))
+def _face_swap_node_factory(checkpoint_dir: str):
+    def _face_swap_node(state: ParserState) -> dict[str, Any]:
+        tasks = state.get("tasks", [])
+        task_count = len(tasks)
         voice_count = len(state.get("voice_outputs", []))
         video_count = len(state.get("video_outputs", []))
 
         memory = state.setdefault("shared_memory", {})
-        if memory.get("parallel_orchestration_complete"):
+        if memory.get("face_swap_complete"):
             return {}
 
         if voice_count < task_count or video_count < task_count:
             return {}
 
-        memory["parallel_orchestration_complete"] = True
+        video_by_scene = {item["scene_id"]: item["video_path"] for item in state.get("video_outputs", [])}
+        face_swap_outputs: list[dict[str, Any]] = []
+        errors: list[str] = []
+
+        for task in tasks:
+            scene_id = task["scene_id"]
+            video_path = video_by_scene.get(scene_id)
+            if not video_path:
+                errors.append(f"Missing video output for {scene_id}.")
+                continue
+
+            identity_ok = identity_validator(scene_id=scene_id, video_path=video_path)
+            if not identity_ok:
+                errors.append(f"Identity validation failed for {scene_id}.")
+                continue
+
+            mapped_video_path = face_swapper(
+                scene_id=scene_id,
+                input_video_path=video_path,
+                output_path=f"output/face_swapped/{scene_id}.mp4",
+            )
+            face_swap_outputs.append(
+                {
+                    "scene_id": scene_id,
+                    "video_path": mapped_video_path,
+                    "identity_validated": True,
+                    "status": "completed",
+                }
+            )
+
+        memory["face_swap_complete"] = True
         snapshot_state: ParserState = {
             **state,
-            "shared_memory": dict(state.get("shared_memory", {})),
+            "shared_memory": dict(memory),
+            "checkpoints": list(state.get("checkpoints", [])),
+            "errors": list(state.get("errors", [])) + errors,
+        }
+        snapshot_state = commit_memory(
+            snapshot_state,
+            "face_swap_complete",
+            {
+                "mapped_scenes": len(face_swap_outputs),
+                "errors": len(errors),
+            },
+            checkpoint_dir=checkpoint_dir,
+        )
+
+        return {
+            "face_swap_outputs": face_swap_outputs,
+            "errors": errors,
+            "shared_memory": snapshot_state["shared_memory"],
+            "checkpoints": snapshot_state["checkpoints"],
+        }
+
+    return _face_swap_node
+
+
+def _lip_sync_node_factory(checkpoint_dir: str):
+    def _lip_sync_node(state: ParserState) -> dict[str, Any]:
+        tasks = state.get("tasks", [])
+        task_count = len(tasks)
+        face_count = len(state.get("face_swap_outputs", []))
+
+        memory = state.setdefault("shared_memory", {})
+        if memory.get("lip_sync_complete"):
+            return {}
+
+        if not memory.get("face_swap_complete"):
+            return {}
+
+        if face_count < task_count:
+            return {}
+
+        audio_by_scene = {item["scene_id"]: item["audio_path"] for item in state.get("voice_outputs", [])}
+        face_by_scene = {item["scene_id"]: item["video_path"] for item in state.get("face_swap_outputs", [])}
+
+        fused_outputs: list[dict[str, Any]] = []
+        errors: list[str] = []
+
+        for task in tasks:
+            scene_id = task["scene_id"]
+            audio_path = audio_by_scene.get(scene_id)
+            video_path = face_by_scene.get(scene_id)
+
+            if not audio_path or not video_path:
+                errors.append(f"Fusion inputs missing for {scene_id}.")
+                continue
+
+            fused_path = lip_sync_aligner(
+                scene_id=scene_id,
+                audio_path=audio_path,
+                video_path=video_path,
+                output_path=f"output/raw_scenes/{scene_id}.mp4",
+            )
+            fused_outputs.append(
+                {
+                    "scene_id": scene_id,
+                    "output_path": fused_path,
+                    "status": "completed",
+                }
+            )
+
+        memory["lip_sync_complete"] = True
+        snapshot_state: ParserState = {
+            **state,
+            "shared_memory": dict(memory),
+            "checkpoints": list(state.get("checkpoints", [])),
+            "errors": list(state.get("errors", [])) + errors,
+        }
+        snapshot_state = commit_memory(
+            snapshot_state,
+            "lip_sync_complete",
+            {
+                "fused_scenes": len(fused_outputs),
+                "errors": len(errors),
+            },
+            checkpoint_dir=checkpoint_dir,
+        )
+
+        return {
+            "fused_outputs": fused_outputs,
+            "errors": errors,
+            "shared_memory": snapshot_state["shared_memory"],
+            "checkpoints": snapshot_state["checkpoints"],
+        }
+
+    return _lip_sync_node
+
+
+def _finalize_node_factory(checkpoint_dir: str):
+    def _finalize_node(state: ParserState) -> dict[str, Any]:
+        tasks = state.get("tasks", [])
+        task_count = len(tasks)
+        fused_count = len(state.get("fused_outputs", []))
+
+        memory = state.setdefault("shared_memory", {})
+        if memory.get("parallel_orchestration_complete"):
+            return {}
+
+        if task_count == 0:
+            memory["parallel_orchestration_complete"] = True
+            snapshot_state: ParserState = {
+                **state,
+                "shared_memory": dict(memory),
+                "checkpoints": list(state.get("checkpoints", [])),
+            }
+            snapshot_state = commit_memory(
+                snapshot_state,
+                "parser_complete",
+                {
+                    "task_count": 0,
+                    "status": "no_tasks",
+                },
+                checkpoint_dir=checkpoint_dir,
+            )
+            return {
+                "shared_memory": snapshot_state["shared_memory"],
+                "checkpoints": snapshot_state["checkpoints"],
+            }
+
+        if not memory.get("lip_sync_complete"):
+            return {}
+
+        if fused_count < task_count:
+            return {}
+
+        memory["parallel_orchestration_complete"] = True
+        snapshot_state = {
+            **state,
+            "shared_memory": dict(memory),
             "checkpoints": list(state.get("checkpoints", [])),
         }
         snapshot_state = commit_memory(
@@ -274,9 +449,11 @@ def _finalize_node_factory(checkpoint_dir: str):
             "parser_complete",
             {
                 "task_count": task_count,
-                "voice_count": voice_count,
-                "video_count": video_count,
-                "status": "parallel_branches_completed",
+                "voice_count": len(state.get("voice_outputs", [])),
+                "video_count": len(state.get("video_outputs", [])),
+                "face_swap_count": len(state.get("face_swap_outputs", [])),
+                "fused_count": fused_count,
+                "status": "fusion_completed",
             },
             checkpoint_dir=checkpoint_dir,
         )
@@ -294,6 +471,8 @@ def build_parser_graph(checkpoint_dir: str = "state/checkpoints"):
     graph.add_node("task_graph_node", _task_graph_node_factory(checkpoint_dir))
     graph.add_node("voice_synth_node", _voice_synth_node)
     graph.add_node("video_gen_node", _video_gen_node)
+    graph.add_node("face_swap_node", _face_swap_node_factory(checkpoint_dir))
+    graph.add_node("lip_sync_node", _lip_sync_node_factory(checkpoint_dir))
     graph.add_node("finalize_node", _finalize_node_factory(checkpoint_dir))
 
     graph.add_edge(START, "scene_parser_node")
@@ -303,8 +482,10 @@ def build_parser_graph(checkpoint_dir: str = "state/checkpoints"):
         _dispatch_parallel_branches,
         ["voice_synth_node", "video_gen_node", "finalize_node"],
     )
-    graph.add_edge("voice_synth_node", "finalize_node")
-    graph.add_edge("video_gen_node", "finalize_node")
+    graph.add_edge("voice_synth_node", "face_swap_node")
+    graph.add_edge("video_gen_node", "face_swap_node")
+    graph.add_edge("face_swap_node", "lip_sync_node")
+    graph.add_edge("lip_sync_node", "finalize_node")
     graph.add_edge("finalize_node", END)
 
     return graph.compile()
@@ -319,6 +500,8 @@ def run_scene_parser(
         "manifest_path": manifest_path,
         "voice_outputs": [],
         "video_outputs": [],
+        "face_swap_outputs": [],
+        "fused_outputs": [],
         "shared_memory": {},
         "checkpoints": [],
         "errors": [],
@@ -339,6 +522,8 @@ def resume_scene_parser(
     recovered["manifest_path"] = manifest_path
     recovered.setdefault("voice_outputs", [])
     recovered.setdefault("video_outputs", [])
+    recovered.setdefault("face_swap_outputs", [])
+    recovered.setdefault("fused_outputs", [])
     recovered.setdefault("errors", [])
     return app.invoke(recovered)
 
@@ -353,3 +538,5 @@ if __name__ == "__main__":
         print(f"Task graph generated for {len(final_state.get('tasks', []))} scenes.")
         print(f"Voice jobs: {len(final_state.get('voice_outputs', []))}")
         print(f"Video jobs: {len(final_state.get('video_outputs', []))}")
+        print(f"Face swap jobs: {len(final_state.get('face_swap_outputs', []))}")
+        print(f"Fusion outputs: {len(final_state.get('fused_outputs', []))}")
