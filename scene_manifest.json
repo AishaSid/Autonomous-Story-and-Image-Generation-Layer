@@ -1,0 +1,37 @@
+{
+  "source": "mock_mcp_tool",
+  "generated_at": "2026-04-06T11:44:20.782894+00:00",
+  "prompt": "An explorer enters an ancient floating city at sunrise.",
+  "scenes": [
+    {
+      "scene_id": "scene_001",
+      "title": "Scene 1: Story Beat",
+      "summary": "A mock progression of the prompt: An explorer enters an ancient floating city at sunrise.",
+      "dialogue_beats": [
+        "Character A establishes intent.",
+        "Character B introduces conflict.",
+        "Both characters align on a next action."
+      ],
+      "visual_cues": [
+        "Wide establishing shot",
+        "Medium over-the-shoulder dialogue",
+        "Close-up emotional reaction"
+      ]
+    },
+    {
+      "scene_id": "scene_002",
+      "title": "Scene 2: Story Beat",
+      "summary": "A mock progression of the prompt: An explorer enters an ancient floating city at sunrise.",
+      "dialogue_beats": [
+        "Character A establishes intent.",
+        "Character B introduces conflict.",
+        "Both characters align on a next action."
+      ],
+      "visual_cues": [
+        "Wide establishing shot",
+        "Medium over-the-shoulder dialogue",
+        "Close-up emotional reaction"
+      ]
+    }
+  ]
+}
