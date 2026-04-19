@@ -16,7 +16,18 @@
         "Wide establishing shot",
         "Medium over-the-shoulder dialogue",
         "Close-up emotional reaction"
-      ]
+      ],
+      "reference_image_paths": [
+        "phase1_inputs/image_assets/Lead.jpg"
+      ],
+      "asset_context": {
+        "character_names": [
+          "Lead"
+        ],
+        "image_paths": [
+          "phase1_inputs/image_assets/Lead.jpg"
+        ]
+      }
     },
     {
       "scene_id": "scene_002",
@@ -31,7 +42,18 @@
         "Wide establishing shot",
         "Medium over-the-shoulder dialogue",
         "Close-up emotional reaction"
-      ]
+      ],
+      "reference_image_paths": [
+        "phase1_inputs/image_assets/Lead.jpg"
+      ],
+      "asset_context": {
+        "character_names": [
+          "Lead"
+        ],
+        "image_paths": [
+          "phase1_inputs/image_assets/Lead.jpg"
+        ]
+      }
     }
   ]
 }
