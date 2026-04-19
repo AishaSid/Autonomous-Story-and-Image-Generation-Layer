@@ -20,6 +20,7 @@ venv/
 
 # Runtime databases/artifacts
 chroma_db/
+state/checkpoints/
 
 # Phase 2 generated outputs (keep folder placeholders)
 raw_scenes/*
