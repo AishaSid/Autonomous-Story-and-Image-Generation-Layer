@@ -74,7 +74,10 @@ def image_node(state: State) -> Dict[str, List[Dict[str, object]]]:
         )
         image_result = _mcp_invoke(
             "generate_image",
-            {"prompt": f"{prompt} | {character_name} | {style_result['reference_style']}"},
+            {
+                "prompt": f"{prompt} | {character_name} | {style_result['reference_style']}",
+                "filename": f"{character_name}.jpg",
+            },
         )
         images.append(
             {
@@ -93,6 +96,7 @@ def memory_commit_node(state: State) -> Dict[str, str]:
     script = state.get("script", {})
     scenes = script.get("scenes", []) if isinstance(script, dict) else []
     first_scene = scenes[0] if scenes else {}
+    image_paths = [str(image.get("path", "")) for image in state.get("images", []) if image.get("path")]
 
     _mcp_invoke(
         "commit_memory",
@@ -107,14 +111,24 @@ def memory_commit_node(state: State) -> Dict[str, str]:
     )
 
     for character in state.get("characters", []):
+        character_name = str(character.get("name", "Unknown"))
+        reference_image_path = next(
+            (
+                str(image.get("path", ""))
+                for image in state.get("images", [])
+                if image.get("character") == character_name
+            ),
+            "",
+        )
         _mcp_invoke(
             "commit_memory",
             {
                 "data": {
-                    "name": str(character.get("name", "Unknown")),
+                    "name": character_name,
                     "personality_traits": [str(t) for t in character.get("personality_traits", [])],
                     "appearance_description": str(character.get("appearance_description", "")),
                     "reference_style": str(character.get("reference_style", "")),
+                    "reference_image_path": reference_image_path,
                     "metadata": {"source": "graph_pipeline"},
                 },
                 "collection_name": "character_metadata",
@@ -137,12 +151,44 @@ def memory_commit_node(state: State) -> Dict[str, str]:
         )
 
     # Deliverable exports for downstream pipeline compatibility.
+    manifest_payload = dict(state.get("script", {}))
+    if isinstance(manifest_payload, dict):
+        manifest_payload["scenes"] = [
+            {
+                **scene,
+                "reference_image_paths": image_paths,
+                "asset_context": {
+                    "character_names": [str(character.get("name", "Unknown")) for character in state.get("characters", [])],
+                    "image_paths": image_paths,
+                },
+            }
+            for scene in scenes
+        ]
+
     Path("scene_manifest.json").write_text(
-        json.dumps(state.get("script", {}), indent=2),
+        json.dumps(manifest_payload, indent=2),
         encoding="utf-8",
     )
     Path("character_db.json").write_text(
-        json.dumps({"characters": state.get("characters", [])}, indent=2),
+        json.dumps(
+            {
+                "characters": [
+                    {
+                        **character,
+                        "reference_image_path": next(
+                            (
+                                str(image.get("path", ""))
+                                for image in state.get("images", [])
+                                if image.get("character") == character.get("name")
+                            ),
+                            "",
+                        ),
+                    }
+                    for character in state.get("characters", [])
+                ]
+            },
+            indent=2,
+        ),
         encoding="utf-8",
     )
 

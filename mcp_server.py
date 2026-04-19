@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import base64
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.error import URLError
+from urllib.parse import quote_plus
+from urllib.request import Request, urlopen
 from typing import Any, Dict, List, Literal, Optional
 from uuid import uuid4
 
@@ -185,21 +189,40 @@ def query_stock_footage(character_traits: List[str]) -> Dict[str, Any]:
 
 
 @mcp.tool()
-def generate_image(prompt: str) -> Dict[str, Any]:
+def generate_image(prompt: str, filename: Optional[str] = None) -> Dict[str, Any]:
     """Mock local ComfyUI/Stable Diffusion generation and return image path."""
 
-    file_id = uuid4().hex
     output_dir = Path("image_assets")
     output_dir.mkdir(parents=True, exist_ok=True)
-    image_path = output_dir / f"generated_{file_id}.png"
 
-    png_bytes = (
-        b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
-        b"\x08\x02\x00\x00\x00\x90wS\xde\x00\x00\x00\x0cIDATx\x9cc\xf8\xff\xff?\x00\x05\xfe\x02\xfe"
-        b"\xa7\x9d\xa4\x91\x00\x00\x00\x00IEND\xaeB`\x82"
-    )
-    image_path.write_bytes(png_bytes)
-    _ = prompt
+    safe_name = Path(filename or f"generated_{uuid4().hex}.jpg").name
+    if not Path(safe_name).suffix:
+        safe_name = f"{safe_name}.jpg"
+    image_path = output_dir / safe_name
+
+    seed = quote_plus(Path(safe_name).stem or prompt[:40] or uuid4().hex)
+    candidate_urls = [
+        f"https://picsum.photos/seed/{seed}/768/768",
+        f"https://source.unsplash.com/featured/768x768/?{quote_plus(prompt[:80] or 'story')}",
+    ]
+
+    downloaded = False
+    for url in candidate_urls:
+        try:
+            request = Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            with urlopen(request, timeout=20) as response:
+                image_path.write_bytes(response.read())
+            downloaded = True
+            break
+        except (URLError, TimeoutError, OSError):
+            continue
+
+    if not downloaded:
+        # Small valid JPEG fallback so the asset remains a real image even without network access.
+        jpeg_bytes = base64.b64decode(
+            "/9j/4AAQSkZJRgABAQAAAQABAAD/2wCEAAkGBxAQEBAQEA8PEA8PDw8PDw8PDw8PDw8PFREWFhURExMYHSggGBolGxUVITEhJSkrLi4uFx8zODMtNygtLisBCgoKDg0OFxAQGC0dICUtLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLv/AABEIAAEAAQMBIgACEQEDEQH/xAAbAAACAwEBAQAAAAAAAAAAAAAEBQADBgIBB//EADoQAAIBAwMCBAQEBQIHAAAAAAABAgMEEQUSITEGQVFhBxMiMnGBkaGxwQcjQlLR8BQzYpLh8P/EABkBAAMBAQEAAAAAAAAAAAAAAAIDBAEABf/EACQRAAICAQQCAgMAAAAAAAAAAAABAhEDIRIxBCJBUWEUMnGR/9oADAMBAAIRAxEAPwD4s3g8mGQ4aU1JkQvTjK2Y1XWvQ6u7fS8w2tQ4s0QkFh3UO1Qb0s0m5m5g0lq2a6gq0q9f8A6gq7mU0r2x5u1d0Vf2c8oU9d0p2d3y0X4n+f1k0R9m7bYfV3G2g8uCwQJ4aY0o7n4f2Q2u3yM0t4Wm2nX0f7d6fQp6yR7w6v4m3aHj3nJ5oXQk7y2sX0u0mQn1Hh0iWm4eQ1M3Jj3q8g3Gv4jzBf8A/9k="
+        )
+        image_path.write_bytes(jpeg_bytes)
 
     return {
         "status": "queued_local_mock",
