@@ -1,0 +1,14 @@
+{
+  "characters": [
+    {
+      "name": "Lead",
+      "personality_traits": [
+        "optimistic",
+        "curious",
+        "story_driven"
+      ],
+      "appearance_description": "Derived from prompt: An explorer enters an ancient floating city at sunrise.",
+      "reference_style": "bright handheld commercial, soft bloom"
+    }
+  ]
+}

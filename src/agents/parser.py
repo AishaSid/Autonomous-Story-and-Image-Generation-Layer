@@ -43,9 +43,25 @@ class SceneManifestModel(BaseModel):
     scenes: list[SceneModel]
 
 
+class CharacterModel(BaseModel):
+    name: str
+    personality_traits: list[str] = Field(default_factory=list)
+    appearance_description: str = ""
+    reference_style: str = ""
+
+
+class CharacterDBModel(BaseModel):
+    characters: list[CharacterModel] = Field(default_factory=list)
+
+
 class ParserState(TypedDict, total=False):
     manifest_path: str
+    phase1_root: str
+    character_db_path: str
+    image_assets_dir: str
     manifest: dict[str, Any]
+    character_db: dict[str, Any]
+    image_assets: list[str]
     tasks: list[dict[str, Any]]
     voice_outputs: Annotated[list[dict[str, Any]], operator.add]
     video_outputs: Annotated[list[dict[str, Any]], operator.add]
@@ -58,6 +74,57 @@ class ParserState(TypedDict, total=False):
 
 class BranchInputState(TypedDict):
     scene_task: dict[str, Any]
+
+
+def _phase1_root_for_manifest(manifest_path: str) -> Path:
+    return Path(manifest_path).resolve().parent
+
+
+def _character_db_path_for_manifest(manifest_path: str) -> Path:
+    return _phase1_root_for_manifest(manifest_path) / "character_db.json"
+
+
+def _image_assets_dir_for_manifest(manifest_path: str) -> Path:
+    return _phase1_root_for_manifest(manifest_path) / "image_assets"
+
+
+def _load_character_db(character_db_path: Path) -> CharacterDBModel:
+    raw = json.loads(character_db_path.read_text(encoding="utf-8"))
+    return CharacterDBModel.model_validate(raw)
+
+
+def _discover_image_assets(image_assets_dir: Path) -> list[str]:
+    if not image_assets_dir.exists():
+        return []
+    return [str(path) for path in sorted(image_assets_dir.glob("*.png"))]
+
+
+def _select_character_profile(character_db: CharacterDBModel, scene_index: int) -> dict[str, Any]:
+    if not character_db.characters:
+        return {}
+
+    character = character_db.characters[scene_index % len(character_db.characters)]
+    return character.model_dump()
+
+
+def _map_visual_cue_assets(
+    scene_index: int,
+    visual_cues: list[str],
+    image_assets: list[str],
+) -> list[dict[str, str]]:
+    if not visual_cues or not image_assets:
+        return []
+
+    mapped_assets: list[dict[str, str]] = []
+    for cue_index, visual_cue in enumerate(visual_cues):
+        asset_index = (scene_index * len(visual_cues) + cue_index) % len(image_assets)
+        mapped_assets.append(
+            {
+                "visual_cue": visual_cue,
+                "image_path": image_assets[asset_index],
+            }
+        )
+    return mapped_assets
 
 
 def _utc_timestamp() -> str:
@@ -104,14 +171,24 @@ def load_latest_checkpoint(checkpoint_dir: str = "state/checkpoints") -> ParserS
     return payload.get("state")
 
 
-def get_task_graph(manifest: SceneManifestModel) -> list[dict[str, Any]]:
+def get_task_graph(
+    manifest: SceneManifestModel,
+    character_db: CharacterDBModel,
+    image_assets: list[str],
+    phase1_root: str,
+    character_db_path: str,
+    image_assets_dir: str,
+) -> list[dict[str, Any]]:
     """MCP tool contract: decompose each scene into parallel audio/video branches."""
     task_graph: list[dict[str, Any]] = []
 
-    for scene in manifest.scenes:
+    for scene_index, scene in enumerate(manifest.scenes):
+        visual_cue_assets = _map_visual_cue_assets(scene_index, scene.visual_cues, image_assets)
+        character_profile = _select_character_profile(character_db, scene_index)
         task_graph.append(
             {
                 "scene_id": scene.scene_id,
+                "scene_index": scene_index,
                 "parallel_branches": {
                     "audio": {
                         "agent": "voice_synthesis_agent",
@@ -125,9 +202,22 @@ def get_task_graph(manifest: SceneManifestModel) -> list[dict[str, Any]]:
                         "inputs": {
                             "summary": scene.summary,
                             "visual_cues": scene.visual_cues,
+                            "visual_cue_assets": visual_cue_assets,
+                            "reference_image_paths": [
+                                asset["image_path"] for asset in visual_cue_assets
+                            ],
+                            "character_profile": character_profile,
                         },
                         "output": f"raw_scenes/{scene.scene_id}.mp4",
                     },
+                },
+                "asset_context": {
+                    "phase1_root": phase1_root,
+                    "character_db_path": character_db_path,
+                    "image_assets_dir": image_assets_dir,
+                    "character_profile": character_profile,
+                    "visual_cue_assets": visual_cue_assets,
+                    "reference_image_paths": [asset["image_path"] for asset in visual_cue_assets],
                 },
                 "post_processors": [
                     {
@@ -159,19 +249,47 @@ def validate_manifest_schema(manifest_path: str) -> tuple[bool, str]:
     return True, "Manifest schema is valid for Phase 2 scene parsing."
 
 
+def validate_character_db_schema(character_db_path: str) -> tuple[bool, str]:
+    try:
+        raw = json.loads(Path(character_db_path).read_text(encoding="utf-8"))
+        CharacterDBModel.model_validate(raw)
+    except FileNotFoundError:
+        return False, f"Character database not found: {character_db_path}"
+    except json.JSONDecodeError as exc:
+        return False, f"Character database is not valid JSON: {exc}"
+    except ValidationError as exc:
+        return False, f"Character database schema mismatch: {exc}"
+
+    return True, "Character database schema is valid for Phase 2 scene parsing."
+
+
 def _scene_parser_node_factory(checkpoint_dir: str):
     def _scene_parser_node(state: ParserState) -> ParserState:
         manifest_path = state["manifest_path"]
+        phase1_root = _phase1_root_for_manifest(manifest_path)
+        character_db_path = phase1_root / "character_db.json"
+        image_assets_dir = phase1_root / "image_assets"
         manifest_raw = json.loads(Path(manifest_path).read_text(encoding="utf-8"))
         manifest = SceneManifestModel.model_validate(manifest_raw)
+        character_db = _load_character_db(character_db_path)
+        image_assets = _discover_image_assets(image_assets_dir)
 
         state["manifest"] = manifest.model_dump()
+        state["character_db"] = character_db.model_dump()
+        state["phase1_root"] = str(phase1_root)
+        state["character_db_path"] = str(character_db_path)
+        state["image_assets_dir"] = str(image_assets_dir)
+        state["image_assets"] = image_assets
         state = commit_memory(
             state,
             "scene_manifest_loaded",
             {
                 "manifest_path": manifest_path,
                 "scene_count": len(manifest.scenes),
+                "character_count": len(character_db.characters),
+                "image_asset_count": len(image_assets),
+                "character_db_path": str(character_db_path),
+                "image_assets_dir": str(image_assets_dir),
             },
             checkpoint_dir=checkpoint_dir,
         )
@@ -183,7 +301,16 @@ def _scene_parser_node_factory(checkpoint_dir: str):
 def _task_graph_node_factory(checkpoint_dir: str):
     def _task_graph_node(state: ParserState) -> ParserState:
         manifest = SceneManifestModel.model_validate(state["manifest"])
-        tasks = get_task_graph(manifest)
+        character_db = CharacterDBModel.model_validate(state.get("character_db", {"characters": []}))
+        image_assets = state.get("image_assets", [])
+        tasks = get_task_graph(
+            manifest,
+            character_db,
+            image_assets,
+            state.get("phase1_root", ""),
+            state.get("character_db_path", ""),
+            state.get("image_assets_dir", ""),
+        )
         state["tasks"] = tasks
 
         state = commit_memory(
@@ -192,6 +319,7 @@ def _task_graph_node_factory(checkpoint_dir: str):
             {
                 "tasks": len(tasks),
                 "scene_ids": [task["scene_id"] for task in tasks],
+                "image_assets_bound": len(image_assets),
             },
             checkpoint_dir=checkpoint_dir,
         )
@@ -239,12 +367,16 @@ def _video_gen_node(state: BranchInputState) -> dict[str, Any]:
     scene_id = task["scene_id"]
     summary = task["parallel_branches"]["video"]["inputs"]["summary"]
     visual_cues = task["parallel_branches"]["video"]["inputs"]["visual_cues"]
+    reference_image_paths = task["parallel_branches"]["video"]["inputs"].get("reference_image_paths", [])
+    character_profile = task["parallel_branches"]["video"]["inputs"].get("character_profile", {})
 
     generated_video = query_stock_footage(
         scene_id=scene_id,
         summary=summary,
         visual_cues=visual_cues,
         output_path=task["parallel_branches"]["video"]["output"],
+        reference_image_paths=reference_image_paths,
+        character_profile=character_profile,
     )
 
     return {
@@ -498,6 +630,10 @@ def run_scene_parser(
     app = build_parser_graph(checkpoint_dir=checkpoint_dir)
     initial_state: ParserState = {
         "manifest_path": manifest_path,
+        "phase1_root": str(_phase1_root_for_manifest(manifest_path)),
+        "character_db_path": str(_character_db_path_for_manifest(manifest_path)),
+        "image_assets_dir": str(_image_assets_dir_for_manifest(manifest_path)),
+        "image_assets": [],
         "voice_outputs": [],
         "video_outputs": [],
         "face_swap_outputs": [],
@@ -520,10 +656,14 @@ def resume_scene_parser(
         return run_scene_parser(manifest_path=manifest_path, checkpoint_dir=checkpoint_dir)
 
     recovered["manifest_path"] = manifest_path
+    recovered["phase1_root"] = str(_phase1_root_for_manifest(manifest_path))
+    recovered["character_db_path"] = str(_character_db_path_for_manifest(manifest_path))
+    recovered["image_assets_dir"] = str(_image_assets_dir_for_manifest(manifest_path))
     recovered.setdefault("voice_outputs", [])
     recovered.setdefault("video_outputs", [])
     recovered.setdefault("face_swap_outputs", [])
     recovered.setdefault("fused_outputs", [])
+    recovered.setdefault("image_assets", [])
     recovered.setdefault("errors", [])
     return app.invoke(recovered)
 
