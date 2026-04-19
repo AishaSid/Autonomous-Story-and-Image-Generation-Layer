@@ -1,0 +1,19 @@
+# Phase 2 core orchestration
+langgraph>=0.2.0
+langchain-core>=0.3.0
+pydantic>=2.8.0
+python-dotenv>=1.0.1
+
+# Audio and video processing
+numpy>=1.26.0
+opencv-python>=4.10.0
+moviepy>=1.0.3
+pydub>=0.25.1
+soundfile>=0.12.1
+librosa>=0.10.2
+Pillow>=10.4.0
+ffmpeg-python>=0.2.0
+
+# Utilities
+requests>=2.32.0
+tqdm>=4.66.0
