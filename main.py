@@ -111,7 +111,9 @@ def audio_node(state: State) -> Dict[str, List[Dict[str, object]]]:
             {
                 "scene_id": scene_id,
                 "script_text": script_text,
+                "dialogue_beats": lines,
                 "filename": f"{scene_id}.mp3",
+                "accent": "en-GB",
             },
         )
 

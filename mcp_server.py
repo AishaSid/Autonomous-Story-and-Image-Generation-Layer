@@ -1,15 +1,21 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 from datetime import datetime, timezone
 from pathlib import Path
+import re
+import tempfile
 from urllib.error import URLError
 from urllib.parse import quote_plus
 from urllib.request import Request, urlopen
 from typing import Any, Dict, List, Literal, Optional
 from uuid import uuid4
 
+import edge_tts
 from gtts import gTTS
+from moviepy.audio.AudioClip import concatenate_audioclips
+from moviepy.audio.io.AudioFileClip import AudioFileClip
 
 from mcp.server.fastmcp import FastMCP
 from pydantic import BaseModel, Field
@@ -236,8 +242,12 @@ def generate_image(prompt: str, filename: Optional[str] = None) -> Dict[str, Any
 def generate_audio(
     script_text: str,
     scene_id: str,
+    dialogue_beats: Optional[List[str]] = None,
     voice_name: Optional[str] = None,
     rate: int = 170,
+    accent: str = "en-GB",
+    male_voice: str = "en-GB-RyanNeural",
+    female_voice: str = "en-GB-SoniaNeural",
     filename: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Generate scene audio from script dialogue and return local MP3 path."""
@@ -252,12 +262,94 @@ def generate_audio(
         safe_name = f"{Path(safe_name).stem}.mp3"
     audio_path = output_dir / safe_name
 
-    text = (script_text or "").strip()
-    if not text:
-        text = "No dialogue available for this scene."
+    source_lines = [str(line).strip() for line in (dialogue_beats or []) if str(line).strip()]
+    if not source_lines:
+        source_lines = [line.strip() for line in str(script_text or "").splitlines() if line.strip()]
+    if not source_lines:
+        source_lines = ["No dialogue available for this scene."]
 
-    tts = gTTS(text=text, lang="en", slow=False)
-    tts.save(str(audio_path.resolve()))
+    dialogue_pattern = re.compile(r"^\s*([A-Za-z][A-Za-z0-9_\- ]{0,30})\s*:\s*(.+)$")
+    utterances: list[tuple[str, str]] = []
+    for raw_line in source_lines:
+        match = dialogue_pattern.match(raw_line)
+        if match:
+            speaker = match.group(1).strip()
+            spoken_text = match.group(2).strip()
+        else:
+            speaker = "Narrator"
+            spoken_text = raw_line.strip()
+
+        if spoken_text:
+            # Names are stripped from speech; only spoken content is synthesized.
+            utterances.append((speaker, spoken_text))
+
+    if not utterances:
+        utterances = [("Narrator", "No dialogue available for this scene.")]
+
+    def _voice_for_speaker() -> dict[str, str]:
+        speaker_order: list[str] = []
+        for speaker, _ in utterances:
+            if speaker not in speaker_order:
+                speaker_order.append(speaker)
+
+        gender_hints = {
+            "lead": "male",
+            "archivist": "female",
+        }
+
+        mapping: dict[str, str] = {}
+        alternating_index = 0
+        for speaker in speaker_order:
+            key = speaker.strip().lower()
+            hint = gender_hints.get(key)
+            if hint == "female":
+                mapping[speaker] = female_voice
+            elif hint == "male":
+                mapping[speaker] = male_voice
+            else:
+                mapping[speaker] = male_voice if alternating_index % 2 == 0 else female_voice
+                alternating_index += 1
+        return mapping
+
+    speaker_voice = _voice_for_speaker()
+
+    async def _synthesize_segment(text: str, voice: str, output_file: Path) -> None:
+        communicator = edge_tts.Communicate(text=text, voice=voice, rate=f"{max(-60, min(60, rate - 170)):+d}%")
+        await communicator.save(str(output_file))
+
+    generated = False
+    try:
+        with tempfile.TemporaryDirectory(prefix=f"tts_{safe_scene}_") as tmp_dir:
+            temp_root = Path(tmp_dir)
+            segment_paths: list[Path] = []
+
+            for index, (speaker, spoken_text) in enumerate(utterances, start=1):
+                segment_path = temp_root / f"seg_{index:03d}.mp3"
+                voice = voice_name or speaker_voice.get(speaker, male_voice)
+                asyncio.run(_synthesize_segment(spoken_text, voice, segment_path))
+                if not segment_path.exists() or segment_path.stat().st_size == 0:
+                    raise RuntimeError(f"Failed to synthesize segment {index} for {scene_id}")
+                segment_paths.append(segment_path)
+
+            clips = [AudioFileClip(str(path)) for path in segment_paths]
+            try:
+                final_clip = concatenate_audioclips(clips)
+                final_clip.write_audiofile(str(audio_path.resolve()), fps=44100, logger=None)
+                final_clip.close()
+            finally:
+                for clip in clips:
+                    clip.close()
+
+        generated = audio_path.exists() and audio_path.stat().st_size > 0
+    except Exception:
+        generated = False
+
+    if not generated:
+        gtts_text = " ".join(spoken_text for _, spoken_text in utterances).strip()
+        if not gtts_text:
+            gtts_text = "No dialogue available for this scene."
+        tts = gTTS(text=gtts_text, lang="en", tld="co.uk", slow=False)
+        tts.save(str(audio_path.resolve()))
 
     if not audio_path.exists() or audio_path.stat().st_size == 0:
         raise RuntimeError(f"Audio generation failed for {scene_id}")
@@ -266,6 +358,8 @@ def generate_audio(
         "status": "generated_local_tts",
         "scene_id": scene_id,
         "audio_path": str(audio_path.relative_to(base_dir)).replace("\\", "/"),
+        "accent": accent,
+        "speaker_voices": speaker_voice,
     }
 
 
