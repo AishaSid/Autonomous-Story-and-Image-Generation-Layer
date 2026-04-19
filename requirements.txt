@@ -5,3 +5,4 @@ pydantic
 mcp
 langchain-openai
 langchain-google-genai
+gTTS

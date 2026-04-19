@@ -9,6 +9,8 @@ from urllib.request import Request, urlopen
 from typing import Any, Dict, List, Literal, Optional
 from uuid import uuid4
 
+from gtts import gTTS
+
 from mcp.server.fastmcp import FastMCP
 from pydantic import BaseModel, Field
 
@@ -227,6 +229,43 @@ def generate_image(prompt: str, filename: Optional[str] = None) -> Dict[str, Any
     return {
         "status": "queued_local_mock",
         "image_path": str(image_path),
+    }
+
+
+@mcp.tool()
+def generate_audio(
+    script_text: str,
+    scene_id: str,
+    voice_name: Optional[str] = None,
+    rate: int = 170,
+    filename: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Generate scene audio from script dialogue and return local MP3 path."""
+
+    base_dir = Path(__file__).resolve().parent
+    output_dir = base_dir / "audio_assets"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    safe_scene = "".join(ch if ch.isalnum() or ch in {"_", "-"} else "_" for ch in scene_id).strip("_") or "scene"
+    safe_name = Path(filename or f"{safe_scene}.mp3").name
+    if Path(safe_name).suffix.lower() != ".mp3":
+        safe_name = f"{Path(safe_name).stem}.mp3"
+    audio_path = output_dir / safe_name
+
+    text = (script_text or "").strip()
+    if not text:
+        text = "No dialogue available for this scene."
+
+    tts = gTTS(text=text, lang="en", slow=False)
+    tts.save(str(audio_path.resolve()))
+
+    if not audio_path.exists() or audio_path.stat().st_size == 0:
+        raise RuntimeError(f"Audio generation failed for {scene_id}")
+
+    return {
+        "status": "generated_local_tts",
+        "scene_id": scene_id,
+        "audio_path": str(audio_path.relative_to(base_dir)).replace("\\", "/"),
     }
 
 

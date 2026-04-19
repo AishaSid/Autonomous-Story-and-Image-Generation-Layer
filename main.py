@@ -90,6 +90,42 @@ def image_node(state: State) -> Dict[str, List[Dict[str, object]]]:
     return {"images": images, "status": "images_generated"}
 
 
+def audio_node(state: State) -> Dict[str, List[Dict[str, object]]]:
+    """Generate scene-level audio files directly from script dialogue beats."""
+
+    scenes = state.get("script", {}).get("scenes", []) if isinstance(state.get("script"), dict) else []
+    audios: List[Dict[str, object]] = []
+
+    for scene in scenes:
+        scene_id = str(scene.get("scene_id", f"scene_{len(audios) + 1:03d}"))
+        dialogue_beats = scene.get("dialogue_beats", [])
+
+        lines = [str(line).strip() for line in dialogue_beats if str(line).strip()]
+        if not lines:
+            fallback = str(scene.get("summary", "No dialogue available for this scene.")).strip()
+            lines = [fallback or "No dialogue available for this scene."]
+
+        script_text = "\n".join(lines)
+        audio_result = _mcp_invoke(
+            "generate_audio",
+            {
+                "scene_id": scene_id,
+                "script_text": script_text,
+                "filename": f"{scene_id}.mp3",
+            },
+        )
+
+        audios.append(
+            {
+                "scene_id": scene_id,
+                "path": str(audio_result.get("audio_path", "")),
+                "content": script_text,
+            }
+        )
+
+    return {"audios": audios, "status": "audio_generated"}
+
+
 def memory_commit_node(state: State) -> Dict[str, str]:
     """Persist generated artifacts into the memory layer via MCP-style tools."""
 
@@ -97,6 +133,11 @@ def memory_commit_node(state: State) -> Dict[str, str]:
     scenes = script.get("scenes", []) if isinstance(script, dict) else []
     first_scene = scenes[0] if scenes else {}
     image_paths = [str(image.get("path", "")) for image in state.get("images", []) if image.get("path")]
+    audio_map = {
+        str(audio.get("scene_id", "")): str(audio.get("path", ""))
+        for audio in state.get("audios", [])
+        if audio.get("scene_id") and audio.get("path")
+    }
 
     _mcp_invoke(
         "commit_memory",
@@ -157,9 +198,11 @@ def memory_commit_node(state: State) -> Dict[str, str]:
             {
                 **scene,
                 "reference_image_paths": image_paths,
+                "reference_audio_path": audio_map.get(str(scene.get("scene_id", "")), ""),
                 "asset_context": {
                     "character_names": [str(character.get("name", "Unknown")) for character in state.get("characters", [])],
                     "image_paths": image_paths,
+                    "audio_path": audio_map.get(str(scene.get("scene_id", "")), ""),
                 },
             }
             for scene in scenes
@@ -209,6 +252,7 @@ def build_graph():
     builder.add_node("hitl_node", hitl_node)
     builder.add_node("character_node", character_node)
     builder.add_node("image_node", image_node)
+    builder.add_node("audio_node", audio_node)
     builder.add_node("memory_commit_node", memory_commit_node)
 
     builder.add_edge(START, "mode_selector_node")
@@ -224,7 +268,8 @@ def build_graph():
     builder.add_edge("scriptwriter_node", "hitl_node")
     builder.add_edge("hitl_node", "character_node")
     builder.add_edge("character_node", "image_node")
-    builder.add_edge("image_node", "memory_commit_node")
+    builder.add_edge("image_node", "audio_node")
+    builder.add_edge("audio_node", "memory_commit_node")
     builder.add_edge("memory_commit_node", END)
 
     checkpointer = MemorySaver()
