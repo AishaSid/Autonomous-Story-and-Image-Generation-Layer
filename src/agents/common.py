@@ -121,7 +121,8 @@ def extract_call_result_payload(call_result: Any) -> Dict[str, Any]:
                     if isinstance(parsed, dict):
                         return _normalize(parsed)
                 except json.JSONDecodeError:
-                    continue
+                    if item_text.strip():
+                        return {"status": "success", "message": item_text.strip()}
 
             if isinstance(item, dict) and isinstance(item.get("text"), str):
                 try:
@@ -129,7 +130,8 @@ def extract_call_result_payload(call_result: Any) -> Dict[str, Any]:
                     if isinstance(parsed, dict):
                         return _normalize(parsed)
                 except json.JSONDecodeError:
-                    continue
+                    if item["text"].strip():
+                        return {"status": "success", "message": item["text"].strip()}
 
     raise RuntimeError("MCP tool response did not contain structured JSON output")
 

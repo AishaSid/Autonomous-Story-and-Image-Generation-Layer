@@ -16,6 +16,10 @@ IMAGE_ASSETS_DIR = PROJECT_ROOT / "outputs" / "image_assets"
 IMAGE_ASSETS_DIR.mkdir(parents=True, exist_ok=True)
 STABILITY_API_KEY = os.environ.get("STABILITY_API_KEY")
 STABILITY_API_URL = "https://api.stability.ai/v1/generation/stable-diffusion-xl-1024-v1-0/text-to-image"
+NEGATIVE_VISUAL_TERMS = (
+    "mountain landscape, architecture-only scene, empty building exterior, skyline with no people, "
+    "forest scenery, abstract background, no human, faceless subject"
+)
 
 
 def generate_character_image(
@@ -45,7 +49,10 @@ def generate_character_image_with_seed(
             "Accept": "application/json",
         }
         payload = {
-            "text_prompts": [{"text": refined_prompt}],
+            "text_prompts": [
+                {"text": refined_prompt, "weight": 1},
+                {"text": NEGATIVE_VISUAL_TERMS, "weight": -1},
+            ],
             "cfg_scale": 7,
             "height": 1024,
             "width": 1024,
@@ -66,10 +73,21 @@ def generate_character_image_with_seed(
                 "seed": int(seed) if seed is not None else None,
             }
 
-    fallback_seed = quote_plus(str(seed if seed is not None else Path(safe_filename).stem or refined_prompt[:40] or character_name))
+    fallback_seed = quote_plus(
+        str(seed if seed is not None else Path(safe_filename).stem or refined_prompt[:40] or character_name)
+    )
+    constrained_prompt = (
+        f"{refined_prompt}. Primary subject is a person on screen, interview frame, visible face, speaking."
+    )
     candidate_urls = [
-        f"https://picsum.photos/seed/{fallback_seed}/768/768",
-        f"https://source.unsplash.com/featured/768x768/?{quote_plus(refined_prompt[:80] or 'story')}",
+        (
+            "https://image.pollinations.ai/prompt/"
+            f"{quote_plus(constrained_prompt)}?width=1024&height=576&seed={fallback_seed}&nologo=true&model=flux"
+        ),
+        (
+            "https://image.pollinations.ai/prompt/"
+            f"{quote_plus(constrained_prompt)}?width=1024&height=576&seed={fallback_seed}&nologo=true"
+        ),
     ]
 
     for url in candidate_urls:
