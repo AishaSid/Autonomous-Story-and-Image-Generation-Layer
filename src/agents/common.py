@@ -15,6 +15,22 @@ from mcp.client.stdio import stdio_client
 from state import State
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+OUTPUTS_DIR = PROJECT_ROOT / "outputs"
+
+
+def ensure_outputs_dir() -> Path:
+    OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
+    return OUTPUTS_DIR
+
+
+def outputs_path(filename: str) -> Path:
+    return ensure_outputs_dir() / filename
+
+
+def thread_state_path(thread_id: str) -> Path:
+    thread_dir = ensure_outputs_dir() / thread_id
+    thread_dir.mkdir(parents=True, exist_ok=True)
+    return thread_dir / "state.json"
 
 
 def load_json_file(path: Path) -> Dict[str, Any]:
@@ -25,7 +41,9 @@ def load_json_file(path: Path) -> Dict[str, Any]:
 
 
 def load_character_names() -> List[str]:
-    payload = load_json_file(PROJECT_ROOT / "character_db.json")
+    payload = load_json_file(outputs_path("character_db.json"))
+    if not payload:
+        payload = load_json_file(PROJECT_ROOT / "character_db.json")
     characters = payload.get("characters", []) if isinstance(payload, dict) else []
     names: List[str] = []
 

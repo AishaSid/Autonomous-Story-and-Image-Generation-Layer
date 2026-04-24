@@ -12,8 +12,8 @@ from urllib.request import Request, urlopen
 import requests
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-IMAGE_ASSETS_DIR = PROJECT_ROOT / "image_assets"
-IMAGE_ASSETS_DIR.mkdir(exist_ok=True)
+IMAGE_ASSETS_DIR = PROJECT_ROOT / "outputs" / "image_assets"
+IMAGE_ASSETS_DIR.mkdir(parents=True, exist_ok=True)
 STABILITY_API_KEY = os.environ.get("STABILITY_API_KEY")
 STABILITY_API_URL = "https://api.stability.ai/v1/generation/stable-diffusion-xl-1024-v1-0/text-to-image"
 

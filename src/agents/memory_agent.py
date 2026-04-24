@@ -6,7 +6,7 @@ from typing import Dict
 
 from state import State
 
-from .common import PROJECT_ROOT, invoke_mcp_tool_via_protocol
+from .common import PROJECT_ROOT, ensure_outputs_dir, invoke_mcp_tool_via_protocol, outputs_path
 
 
 def memory_commit_node(state: State) -> Dict[str, str]:
@@ -14,11 +14,11 @@ def memory_commit_node(state: State) -> Dict[str, str]:
     scenes = script.get("scenes", []) if isinstance(script, dict) else []
     first_scene = scenes[0] if scenes else {}
     image_paths = [str(image.get("path", "")) for image in state.get("images", []) if image.get("path")]
-    audio_map = {
-        str(audio.get("scene_id", "")): str(audio.get("path", ""))
-        for audio in state.get("audios", [])
-        if audio.get("scene_id") and audio.get("path")
-    }
+    scene_image_map = {}
+    for image in state.get("images", []):
+        scene_id = str(image.get("scene_id", ""))
+        if scene_id and image.get("path"):
+            scene_image_map.setdefault(scene_id, []).append(str(image.get("path", "")))
 
     invoke_mcp_tool_via_protocol(
         "commit_memory",
@@ -43,9 +43,15 @@ def memory_commit_node(state: State) -> Dict[str, str]:
             {
                 "data": {
                     "name": character_name,
+                    "age": str(character.get("age", "")),
                     "personality_traits": [str(t) for t in character.get("personality_traits", [])],
                     "appearance_description": str(character.get("appearance_description", "")),
-                    "reference_style": str(character.get("reference_style", "")),
+                    "clothing": str(character.get("clothing", "")),
+                    "hair_texture": str(character.get("hair_texture", "")),
+                    "eye_color": str(character.get("eye_color", "")),
+                    "signature_item": str(character.get("signature_item", "")),
+                    "base_visual_style": str(character.get("base_visual_style", character.get("reference_style", ""))),
+                    "reference_style": str(character.get("base_visual_style", character.get("reference_style", ""))),
                     "reference_image_path": reference_image_path,
                     "metadata": {"source": "graph_pipeline"},
                 },
@@ -61,6 +67,10 @@ def memory_commit_node(state: State) -> Dict[str, str]:
                     "document": str(image.get("path", "")),
                     "metadata": {
                         "character": str(image.get("character", "")),
+                        "character_names": [str(name) for name in image.get("character_names", [])],
+                        "scene_id": str(image.get("scene_id", "")),
+                        "frame_id": str(image.get("frame_id", "")),
+                        "visual_cue": str(image.get("visual_cue", "")),
                         "reference_style": str(image.get("reference_style", "")),
                     },
                 },
@@ -74,23 +84,25 @@ def memory_commit_node(state: State) -> Dict[str, str]:
             {
                 **scene,
                 "reference_image_paths": image_paths,
-                "reference_audio_path": audio_map.get(str(scene.get("scene_id", "")), ""),
+                "frame_image_paths": scene_image_map.get(str(scene.get("scene_id", "")), []),
                 "asset_context": {
                     "character_names": [str(character.get("name", "Unknown")) for character in state.get("characters", [])],
                     "image_paths": image_paths,
-                    "audio_path": audio_map.get(str(scene.get("scene_id", "")), ""),
+                    "frame_image_paths": scene_image_map.get(str(scene.get("scene_id", "")), []),
                 },
             }
             for scene in scenes
         ]
 
-    Path(PROJECT_ROOT / "scene_manifest.json").write_text(json.dumps(manifest_payload, indent=2), encoding="utf-8")
-    Path(PROJECT_ROOT / "character_db.json").write_text(
+    outputs_dir = ensure_outputs_dir()
+    (outputs_dir / "scene_manifest.json").write_text(json.dumps(manifest_payload, indent=2), encoding="utf-8")
+    (outputs_dir / "character_db.json").write_text(
         json.dumps(
             {
                 "characters": [
                     {
                         **character,
+                        "age": str(character.get("age", "")),
                         "reference_image_path": next(
                             (
                                 str(image.get("path", ""))
