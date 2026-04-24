@@ -67,6 +67,7 @@ def main() -> None:
         graph = build_graph(interrupt_before_character=False)
         state = initial_state(user_prompt=user_prompt, input_mode="auto")
         state["num_scenes"] = 2
+        state["max_total_frames"] = 4
         state["reuse_character_memory"] = False
         state["llm_provider"] = "groq"
         state["llm_model"] = "llama-3.3-70b-versatile"

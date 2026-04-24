@@ -79,6 +79,29 @@ def _ensure_transition_cues(cues: List[str], character_profiles: List[Dict[str, 
         cleaned.append(item)
     return cleaned
 
+
+def _select_scene_cues(cues: List[str], max_cues: int = 2) -> List[str]:
+    """Selects a small set of cues with character + interaction coverage."""
+    if len(cues) <= max_cues:
+        return cues
+
+    cues_lower = [cue.lower() for cue in cues]
+    first_idx = 0
+    interaction_idx = -1
+    for idx, cue in enumerate(cues_lower):
+        if "two-shot" in cue or "speaking beat" in cue or "speaking" in cue:
+            interaction_idx = idx
+            break
+
+    selected_indices = [first_idx]
+    if interaction_idx >= 0 and interaction_idx != first_idx:
+        selected_indices.append(interaction_idx)
+    elif len(cues) > 1:
+        selected_indices.append(1)
+
+    selected = [cues[idx] for idx in selected_indices][:max_cues]
+    return selected
+
 def refine_visual_cues(scenes: List[Any], character_names: List[str]) -> List[Dict[str, Any]]:
     """Helper used by scriptwriter to ensure scenes have base cues."""
     normalized_names = [name.strip() for name in character_names if name.strip()]
@@ -113,6 +136,7 @@ def visual_refiner_node(state: State) -> Dict[str, Any]:
         cues = scene.get("visual_cues", ["Cinematic frame with clear blocking."])
         scene["scene_id"] = scene.get("scene_id") or f"scene_{scene_index:03d}"
         cues = _ensure_transition_cues(cues, character_profiles)
+        cues = _select_scene_cues(cues, max_cues=2)
         
         frame_prompts = []
         for frame_index, cue in enumerate(cues, start=1):

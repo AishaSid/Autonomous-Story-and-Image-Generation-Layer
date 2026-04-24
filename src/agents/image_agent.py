@@ -22,8 +22,10 @@ def image_node(state: State) -> Dict[str, Any]:
     print("--- GENERATING IMAGES ---")
     script = state.get("script", {})
     scenes = script.get("scenes", [])
+    max_total_frames = int(state.get("max_total_frames", 4))
     
     images = []
+    generated_count = 0
     
     for scene in scenes:
         scene_id = scene.get("scene_id", "scene_000")
@@ -31,6 +33,8 @@ def image_node(state: State) -> Dict[str, Any]:
         scene_image_paths = []
         
         for frame in frame_prompts:
+            if generated_count >= max_total_frames:
+                break
             frame_id = frame.get("frame_id")
             primary_character = frame.get("primary_character", "Character")
             refined_prompt = frame.get("refined_prompt", "")
@@ -69,8 +73,11 @@ def image_node(state: State) -> Dict[str, Any]:
                     "refined_prompt": refined_prompt,
                     "path": image_path,
                 })
+                generated_count += 1
                 
         # Link generated images back to the scene metadata
         scene["frame_image_paths"] = scene_image_paths
+        if generated_count >= max_total_frames:
+            break
 
     return {"images": images, "script": script, "status": "images_generated"}

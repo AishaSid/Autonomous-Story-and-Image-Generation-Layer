@@ -10,11 +10,11 @@ from urllib.parse import quote_plus
 from urllib.request import Request, urlopen
 
 import requests
+from PIL import Image
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 IMAGE_ASSETS_DIR = PROJECT_ROOT / "outputs" / "image_assets"
 IMAGE_ASSETS_DIR.mkdir(parents=True, exist_ok=True)
-STABILITY_API_KEY = os.environ.get("STABILITY_API_KEY")
 STABILITY_API_URL = "https://api.stability.ai/v1/generation/stable-diffusion-xl-1024-v1-0/text-to-image"
 NEGATIVE_VISUAL_TERMS = (
     "mountain landscape, architecture-only scene, empty building exterior, skyline with no people, "
@@ -34,6 +34,15 @@ def _looks_like_image(binary_data: bytes) -> bool:
     )
 
 
+def _write_safe_placeholder(image_path: Path, seed: Optional[int] = None) -> None:
+    """Writes a guaranteed valid PNG placeholder when all providers fail."""
+    seed_value = int(seed) if seed is not None else random.randint(1, 2**31 - 1)
+    rng = random.Random(seed_value)
+    color = (rng.randint(40, 180), rng.randint(40, 180), rng.randint(40, 180))
+    img = Image.new("RGB", (1024, 576), color=color)
+    img.save(image_path, format="PNG")
+
+
 def generate_character_image(
     refined_prompt: str,
     character_name: str,
@@ -49,14 +58,15 @@ def generate_character_image_with_seed(
     filename: Optional[str] = None,
     seed: Optional[int] = None,
 ) -> Dict[str, Any]:
+    stability_api_key = os.environ.get("STABILITY_API_KEY")
     safe_filename = Path(filename or f"{character_name}.jpg").name
     if not Path(safe_filename).suffix:
         safe_filename = f"{safe_filename}.png"
     image_path = IMAGE_ASSETS_DIR / safe_filename
 
-    if STABILITY_API_KEY:
+    if stability_api_key:
         headers = {
-            "Authorization": f"Bearer {STABILITY_API_KEY}",
+            "Authorization": f"Bearer {stability_api_key}",
             "Content-Type": "application/json",
             "Accept": "application/json",
         }
@@ -122,10 +132,7 @@ def generate_character_image_with_seed(
         except (URLError, TimeoutError, OSError):
             continue
 
-    jpeg_bytes = base64.b64decode(
-        "/9j/4AAQSkZJRgABAQAAAQABAAD/2wCEAAkGBxAQEBAQEA8PEA8PDw8PDw8PDw8PDw8PFREWFhURExMYHSggGBolGxUVITEhJSkrLi4uFx8zODMtNygtLisBCgoKDg0OFxAQGC0dICUtLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLv/AABEIAAEAAQMBIgACEQEDEQH/xAAbAAACAwEBAQAAAAAAAAAAAAAEBQADBgIBB//EADoQAAIBAwMCBAQEBQIHAAAAAAABAgMEEQUSITEGQVFhBxMiMnGBkaGxwQcjQlLR8BQzYpLh8P/EABkBAAMBAQEAAAAAAAAAAAAAAAIDBAEABf/EACQRAAICAQQCAgMAAAAAAAAAAAABAhEDIRIxBCJBUWEUMnGR/9oADAMBAAIRAxEAPwD4s3g8mGQ4aU1JkQvTjK2Y1XWvQ6u7fS8w2tQ4s0QkFh3UO1Qb0s0m5m5g0lq2a6gq0q9f8A6gq7mU0r2x5u1d0Vf2c8oU9d0p2d3y0X4n+f1k0R9m7bYfV3G2g8uCwQJ4aY0o7n4f2Q2u3yM0t4Wm2nX0f7d6fQp6yR7w6v4m3aHj3nJ5oXQk7y2sX0u0mQn1Hh0iWm4eQ1M3Jj3q8g3Gv4jzBf8A/9k="
-    )
-    image_path.write_bytes(jpeg_bytes)
+    _write_safe_placeholder(image_path, seed=seed)
     return {
         "image_path": str(image_path),
         "character_name": character_name,
