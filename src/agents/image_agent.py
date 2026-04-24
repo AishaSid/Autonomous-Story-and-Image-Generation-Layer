@@ -11,6 +11,13 @@ def _seed_from_name(name: str) -> int:
     digest = hashlib.sha256(name.strip().lower().encode("utf-8")).hexdigest()
     return int(digest[:8], 16)
 
+
+def _seed_for_frame(name: str, frame_id: str, visual_cue: str) -> int:
+    """Generates deterministic but unique seeds per frame to avoid duplicate outputs."""
+    token = f"{name.strip().lower()}|{frame_id.strip().lower()}|{visual_cue.strip().lower()}"
+    digest = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    return int(digest[:8], 16)
+
 def image_node(state: State) -> Dict[str, Any]:
     print("--- GENERATING IMAGES ---")
     script = state.get("script", {})
@@ -29,7 +36,7 @@ def image_node(state: State) -> Dict[str, Any]:
             refined_prompt = frame.get("refined_prompt", "")
             visual_cue = frame.get("visual_cue", "")
             
-            seed = _seed_from_name(primary_character)
+            seed = _seed_for_frame(primary_character, str(frame_id or ""), str(visual_cue or ""))
             filename = f"{frame_id}.png"
             
             print(f"Generating image for {frame_id} ({primary_character})...")

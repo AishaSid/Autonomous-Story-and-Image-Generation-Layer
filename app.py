@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 import streamlit as st
+from PIL import Image, UnidentifiedImageError
 
 from main import build_graph
 from src.agents.common import outputs_path
@@ -35,6 +36,15 @@ def _render_json(title: str, payload: Dict[str, Any]) -> None:
     st.code(json.dumps(payload, indent=2), language="json")
 
 
+def _is_valid_image(path_obj: Path) -> bool:
+    try:
+        with Image.open(path_obj) as image:
+            image.verify()
+        return True
+    except (OSError, UnidentifiedImageError):
+        return False
+
+
 def main() -> None:
     st.set_page_config(page_title="Autonomous Story & Image Generator", layout="wide")
     st.title("Autonomous Story and Image Generation UI")
@@ -48,7 +58,6 @@ def main() -> None:
         value="a man giving interview to a female",
         help="Describe a short 5-6 second scene.",
     )
-    num_scenes = st.slider("Number of scenes", min_value=1, max_value=3, value=1)
     run_clicked = st.button("Generate Scene Package", type="primary")
 
     if not run_clicked:
@@ -57,7 +66,8 @@ def main() -> None:
     with st.spinner("Running multi-agent pipeline..."):
         graph = build_graph(interrupt_before_character=False)
         state = initial_state(user_prompt=user_prompt, input_mode="auto")
-        state["num_scenes"] = int(num_scenes)
+        state["num_scenes"] = 2
+        state["reuse_character_memory"] = False
         state["llm_provider"] = "groq"
         state["llm_model"] = "llama-3.3-70b-versatile"
         state["llm_temperature"] = 0.3
@@ -83,7 +93,10 @@ def main() -> None:
         for image_path in image_paths:
             path_obj = Path(image_path)
             if path_obj.exists():
-                st.image(str(path_obj), caption=path_obj.name, use_container_width=True)
+                if _is_valid_image(path_obj):
+                    st.image(str(path_obj), caption=path_obj.name, width="stretch")
+                else:
+                    st.warning(f"Skipped invalid image file: {path_obj.name}")
             else:
                 st.caption(f"Missing file: {image_path}")
 

@@ -37,13 +37,47 @@ def _build_refined_prompt(character_profile: Dict[str, Any], cue: str, summary: 
         "(No character blending, no duplicate faces.) --ar 16:9"
     )
 
-def _select_primary_character(cue: str, character_profiles: List[Dict[str, Any]]) -> Dict[str, Any]:
+def _select_primary_character(cue: str, character_profiles: List[Dict[str, Any]], frame_index: int) -> Dict[str, Any]:
     """Finds which character the visual cue is focusing on."""
     cue_lower = cue.lower()
     for char in character_profiles:
         if char.get("name", "").lower() in cue_lower:
             return char
-    return character_profiles[0] if character_profiles else {}
+
+    if len(character_profiles) >= 2:
+        first = character_profiles[0]
+        second = character_profiles[1]
+        if any(token in cue_lower for token in ["female", "woman", "reporter", "interviewer", "she", "her"]):
+            return second
+        if any(token in cue_lower for token in ["male", "man", "interviewee", "he", "his"]):
+            return first
+
+    if character_profiles:
+        return character_profiles[(frame_index - 1) % len(character_profiles)]
+    return {}
+
+
+def _ensure_transition_cues(cues: List[str], character_profiles: List[Dict[str, Any]]) -> List[str]:
+    cleaned = [str(cue).strip() for cue in cues if str(cue).strip()]
+    if len(cleaned) >= 4:
+        return cleaned
+
+    names = [str(char.get("name", "Character")).strip() for char in character_profiles if char.get("name")]
+    male = names[0] if names else "Male interviewee"
+    female = names[1] if len(names) > 1 else "Female interviewer"
+
+    defaults = [
+        f"{female} asks the first question in a close-up interview shot.",
+        f"{male} answers while speaking directly in a close-up interview shot.",
+        f"{male} continues speaking as {female} listens and takes notes.",
+        f"{male} and {female} appear together in a two-shot showing interview transition.",
+    ]
+
+    for item in defaults:
+        if len(cleaned) >= 4:
+            break
+        cleaned.append(item)
+    return cleaned
 
 def refine_visual_cues(scenes: List[Any], character_names: List[str]) -> List[Dict[str, Any]]:
     """Helper used by scriptwriter to ensure scenes have base cues."""
@@ -78,10 +112,11 @@ def visual_refiner_node(state: State) -> Dict[str, Any]:
         scene_summary = scene.get("summary", "")
         cues = scene.get("visual_cues", ["Cinematic frame with clear blocking."])
         scene["scene_id"] = scene.get("scene_id") or f"scene_{scene_index:03d}"
+        cues = _ensure_transition_cues(cues, character_profiles)
         
         frame_prompts = []
         for frame_index, cue in enumerate(cues, start=1):
-            primary = _select_primary_character(cue, character_profiles)
+            primary = _select_primary_character(cue, character_profiles, frame_index)
             _validate_character_details(primary)
             
             refined_prompt = _build_refined_prompt(primary, cue, scene_summary)

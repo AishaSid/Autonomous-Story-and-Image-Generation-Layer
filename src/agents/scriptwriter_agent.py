@@ -12,29 +12,31 @@ from .visual_refiner_agent import refine_visual_cues
 
 
 def _build_script_prompt(prompt: str, num_scenes: int, character_names: List[str]) -> str:
-    character_line = ", ".join(character_names) if character_names else "the established characters"
+    character_line = ", ".join(character_names) if character_names else "create fresh character names from this prompt"
     return (
         "You are a fast screenplay writer using Groq. Return strictly structured JSON with both characters and scenes. "
-        "Every scene must include visual_cues that explicitly mention the exact character names provided. "
-        "Do not paraphrase or rename character identities.\n\n"
+        "Generate realistic modern-day human interview scenes unless the user explicitly requests fantasy/sci-fi. "
+        "Avoid fantasy archetypes like explorer, warrior, mage, or mythical roles unless requested.\n\n"
         f"User prompt: {prompt}\n"
         f"Scene count: {num_scenes}\n"
         f"Character names to preserve exactly: {character_line}\n\n"
         "Rules:\n"
-        "1) Include a top-level characters array with exact names, personality traits, appearance_description, and reference_style.\n"
+        "1) Include a top-level characters array with exact names, personality_traits, appearance_description, and reference_style.\n"
         "2) Reuse the same character names consistently across all scenes.\n"
         "3) Each scene must contain scene_id, title, summary, dialogue_beats, visual_cues.\n"
         "4) visual_cues must be cinematic, specific, and include at least one exact character name.\n"
-        "5) Keep dialogue_beats concise and scene-specific.\n"
-        "6) Keep the overall story coherent across scenes.\n"
-        "7) Output only content that fits the schema."
+        "5) For interview prompts, ensure visual_cues include both characters and alternating shot types: interviewer close-up, interviewee close-up, speaking beat, and a two-shot.\n"
+        "6) Keep dialogue_beats concise and scene-specific.\n"
+        "7) Keep the overall story coherent across scenes.\n"
+        "8) Output only content that fits the schema."
     )
 
 
 def scriptwriter_node(state: State, llm_client: Any = None) -> Dict[str, Any]:
     prompt = state.get("user_prompt", "")
     num_scenes = int(state.get("num_scenes", 2))
-    memory_character_names = load_character_names()
+    reuse_memory = bool(state.get("reuse_character_memory", False))
+    memory_character_names = load_character_names() if reuse_memory else []
 
     llm = llm_client or resolve_llm_client(state, default_provider="groq")
     if llm is None:
@@ -67,12 +69,18 @@ def scriptwriter_node(state: State, llm_client: Any = None) -> Dict[str, Any]:
         characters = [
             {
                 "name": "Lead",
-                "personality_traits": ["curious", "driven"],
-                "appearance_description": "Explorer with practical travel gear and a focused expression.",
-                "reference_style": "cinematic adventure, warm highlights",
-            }
+                "personality_traits": ["confident", "articulate"],
+                "appearance_description": "A normal adult male in smart-casual interview attire, clean and realistic look.",
+                "reference_style": "cinematic realistic interview lighting",
+            },
+            {
+                "name": "Interviewer",
+                "personality_traits": ["professional", "empathetic"],
+                "appearance_description": "A normal adult female reporter in a formal blazer, natural and realistic look.",
+                "reference_style": "cinematic realistic interview lighting",
+            },
         ]
-        character_names = ["Lead"]
+        character_names = ["Lead", "Interviewer"]
 
     script = {
         "source": "groq_structured_output",

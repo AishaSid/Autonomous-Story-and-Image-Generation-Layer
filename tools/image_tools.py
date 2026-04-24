@@ -22,6 +22,18 @@ NEGATIVE_VISUAL_TERMS = (
 )
 
 
+def _looks_like_image(binary_data: bytes) -> bool:
+    if not binary_data:
+        return False
+    return (
+        binary_data.startswith(b"\x89PNG\r\n\x1a\n")
+        or binary_data.startswith(b"\xff\xd8\xff")
+        or binary_data.startswith(b"GIF87a")
+        or binary_data.startswith(b"GIF89a")
+        or binary_data[:4] == b"RIFF" and binary_data[8:12] == b"WEBP"
+    )
+
+
 def generate_character_image(
     refined_prompt: str,
     character_name: str,
@@ -94,7 +106,13 @@ def generate_character_image_with_seed(
         try:
             request = Request(url, headers={"User-Agent": "Mozilla/5.0"})
             with urlopen(request, timeout=20) as response:
-                image_path.write_bytes(response.read())
+                content_type = str(response.headers.get("Content-Type", "")).lower()
+                body = response.read()
+                if "image" not in content_type and not _looks_like_image(body):
+                    continue
+                if not _looks_like_image(body):
+                    continue
+                image_path.write_bytes(body)
             return {
                 "image_path": str(image_path),
                 "character_name": character_name,
