@@ -5,6 +5,7 @@ pydantic
 mcp
 langchain-openai
 langchain-google-genai
+langchain-groq
 gTTS
 edge-tts
 moviepy
