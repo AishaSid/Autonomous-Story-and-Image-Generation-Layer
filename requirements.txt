@@ -9,3 +9,6 @@ langchain-groq
 python-dotenv
 requests
 streamlit
+opencv-python
+numpy
+pyttsx3
