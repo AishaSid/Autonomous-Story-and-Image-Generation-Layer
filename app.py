@@ -187,8 +187,8 @@ def _run_pipeline(user_prompt: str, input_mode: str) -> None:
 
     st.divider()
     st.subheader("Saved Outputs")
-    st.write(f"- **Scene Manifest:** `{outputs_path('scene_manifest.json')}`")
-    st.write(f"- **Character DB:** `{outputs_path('character_db.json')}`")
+    st.write(f"- **Scene Manifest:** `phase1_outputs/scene_manifest.json`")
+    st.write(f"- **Character DB:** `phase1_outputs/character_db.json`")
 
 
 if __name__ == "__main__":

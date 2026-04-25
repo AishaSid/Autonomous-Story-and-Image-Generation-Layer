@@ -244,7 +244,7 @@ def get_task_graph(
                         "inputs": {
                             "dialogue_beats": scene.dialogue_beats,
                         },
-                        "output": f"output/{scene.scene_id}.wav",
+                        "output": f"phase2_outputs/{scene.scene_id}.wav",
                     },
                     "video": {
                         "agent": "video_generation_agent",
@@ -365,7 +365,7 @@ def _task_graph_node_factory(checkpoint_dir: str):
         pending_tasks: list[dict[str, Any]] = []
         for task in tasks:
             scene_id = task["scene_id"]
-            completed_output = Path(f"output/raw_scenes/{scene_id}.mp4")
+            completed_output = Path(f"phase2_outputs/raw_scenes/{scene_id}.mp4")
             if completed_output.exists() and completed_output.stat().st_size > 0:
                 skipped_scenes.append(scene_id)
                 continue
@@ -516,7 +516,7 @@ def _face_swap_node_factory(checkpoint_dir: str):
                 "face_swap_agent",
                 scene_id=scene_id,
                 input_video_path=video_path,
-                output_path=f"output/face_swapped/{scene_id}.mp4",
+                output_path=f"phase2_outputs/face_swapped/{scene_id}.mp4",
                 scene_task=task,
                 character_db_path=character_db_path,
             )
@@ -600,7 +600,7 @@ def _lip_sync_node_factory(checkpoint_dir: str):
                 scene_id=scene_id,
                 audio_path=audio_path,
                 video_path=video_path,
-                output_path=f"output/raw_scenes/{scene_id}.mp4",
+                output_path=f"phase2_outputs/raw_scenes/{scene_id}.mp4",
             )
             fused_outputs.append(
                 {
@@ -773,7 +773,7 @@ def resume_scene_parser(
 
 
 if __name__ == "__main__":
-    default_manifest = "phase1_inputs/scene_manifest.json"
+    default_manifest = "phase1_outputs/scene_manifest.json"
     is_valid, message = validate_manifest_schema(default_manifest)
     print(message)
 

@@ -435,7 +435,8 @@ dist/
 .ipynb_checkpoints/
 
 # Project runtime outputs
-outputs/
+phase1_outputs/
+phase2_outputs/
 
 # Local vector DB persistence
 chroma_db/

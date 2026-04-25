@@ -15,7 +15,9 @@ from mcp.client.stdio import stdio_client
 from state import State
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-OUTPUTS_DIR = PROJECT_ROOT / "outputs"
+PHASE1_OUTPUTS_DIR = PROJECT_ROOT / "phase1_outputs"
+PHASE2_OUTPUTS_DIR = PROJECT_ROOT / "phase2_outputs"
+OUTPUTS_DIR = PHASE1_OUTPUTS_DIR  # Legacy compatibility
 
 
 def ensure_outputs_dir() -> Path:

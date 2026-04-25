@@ -37,7 +37,7 @@ def run_full_pipeline(
     Args:
         user_prompt: Initial user input describing the story/scenario
         input_mode: "manual" for human-in-the-loop, "auto" for autonomous
-        skip_phase1: If True, skip phase-1 and use existing manifest in phase1_inputs/
+        skip_phase1: If True, skip phase-1 and use existing manifest in phase1_outputs/
         resume_phase2: If True, resume from last checkpoint in phase-2
         checkpoint_dir: Directory for phase-2 checkpoints
     
@@ -45,7 +45,7 @@ def run_full_pipeline(
         Dictionary with both phase-1 and phase-2 outputs
     """
     
-    phase1_manifest_path = "phase1_inputs/scene_manifest.json"
+    phase1_manifest_path = "phase1_outputs/scene_manifest.json"
     results = {
         "phase1": None,
         "phase2": None,
@@ -179,7 +179,7 @@ def run_full_pipeline(
     
     if results["phase2"]:
         print(f"\nPhase-2 Output:")
-        print(f"  Final videos: outputs/")
+        print(f"  Final videos: phase2_outputs/")
     
     if results["errors"]:
         print(f"\nErrors ({len(results['errors'])}):")

@@ -77,7 +77,7 @@ streamlit run app.py
       "name": "Character Name",
       "appearance_description": "Detailed visual features",
       "base_visual_style": "Lighting + composition style",
-      "reference_image_path": "outputs/image_assets/...",
+      "reference_image_path": "phase1_outputs/image_assets/...",
       "personality_traits": ["trait1", "trait2"]
     }
   ]

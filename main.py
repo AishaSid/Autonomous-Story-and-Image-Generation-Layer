@@ -103,5 +103,5 @@ if __name__ == "__main__":
 
     print("\nPipeline paused before character/image generation.")
     print(f"Thread ID: {base_thread_id}")
-    print(f"Edit files in outputs/, then run: python resume.py {base_thread_id}")
+    print(f"Edit files in phase1_outputs/, then run: python resume.py {base_thread_id}")
 
