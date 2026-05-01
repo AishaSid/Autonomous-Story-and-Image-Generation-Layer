@@ -16,10 +16,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Phase-1 imports
-from main import build_graph as build_phase1_graph
-from state import State, initial_state
-
 # Phase-2 imports  
 from src.agents.parser import run_scene_parser, resume_scene_parser, validate_manifest_schema
 
@@ -60,15 +56,18 @@ def run_full_pipeline(
         print("="*60)
         
         try:
+            # Lazy import so Phase-2 only runs don't require Phase-1 dependencies.
+            from main import build_graph as build_phase1_graph
+            from state import State, initial_state
+
             # Build and run phase-1 pipeline
             phase1_graph = build_phase1_graph(interrupt_before_character=False)
             
             # Prepare initial state
-            phase1_state: State = {
-                **initial_state,
-                "user_input": user_prompt,
-                "input_mode": input_mode,
-            }
+            phase1_state: State = initial_state(
+                user_prompt=user_prompt,
+                input_mode=input_mode,
+            )
             
             # Execute phase-1
             print(f"\nRunning Phase-1 with mode: {input_mode}")

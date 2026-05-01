@@ -99,7 +99,9 @@ def resolve_llm_client(state: State, llm_client: Any = None, default_provider: s
 
 def get_server_params() -> StdioServerParameters:
     server_path = PROJECT_ROOT / "mcp_server.py"
-    return StdioServerParameters(command=sys.executable, args=[str(server_path)])
+    venv_python = PROJECT_ROOT / ".venv" / "Scripts" / "python.exe"
+    command = str(venv_python) if venv_python.exists() else sys.executable
+    return StdioServerParameters(command=command, args=[str(server_path)])
 
 
 def extract_call_result_payload(call_result: Any) -> Dict[str, Any]:

@@ -12,3 +12,12 @@ streamlit
 opencv-python
 numpy
 pyttsx3
+insightface
+onnxruntime
+# Phase 2 specific dependencies
+elevenlabs
+fal-client
+piper-tts
+# Optional but recommended
+pydub
+librosa

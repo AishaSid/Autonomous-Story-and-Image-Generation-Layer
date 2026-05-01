@@ -15,16 +15,20 @@ from pydantic import BaseModel, Field, ValidationError
 try:
     from src.agents.face_swap import face_swap_validate_and_map
     from src.agents.video_gen import generate_scene_video
-    from tools.lip_sync_aligner import lip_sync_aligner
+    from tools.lip_sync_aligner import lip_sync_aligner as lip_sync_aligner_old
     from tools.voice_cloning_synthesizer import voice_cloning_synthesizer
+    from tools.enhanced_face_swap import enhanced_face_swap_pipeline
+    from tools.enhanced_lip_sync import lip_sync_aligner
 except ModuleNotFoundError:
     project_root = Path(__file__).resolve().parents[2]
     if str(project_root) not in sys.path:
         sys.path.insert(0, str(project_root))
     from src.agents.face_swap import face_swap_validate_and_map
     from src.agents.video_gen import generate_scene_video
-    from tools.lip_sync_aligner import lip_sync_aligner
+    from tools.lip_sync_aligner import lip_sync_aligner as lip_sync_aligner_old
     from tools.voice_cloning_synthesizer import voice_cloning_synthesizer
+    from tools.enhanced_face_swap import enhanced_face_swap_pipeline
+    from tools.enhanced_lip_sync import lip_sync_aligner
 
 
 class SceneModel(BaseModel):
@@ -79,8 +83,8 @@ def _invoke_graph_tool(tool_name: str, **kwargs: Any) -> Any:
     tool_registry = {
         "voice_cloning_synthesizer": voice_cloning_synthesizer,
         "video_generation_agent": generate_scene_video,
-        "face_swap_agent": face_swap_validate_and_map,
-        "lip_sync_aligner": lip_sync_aligner,
+        "face_swap_agent": enhanced_face_swap_pipeline,  # Use enhanced version
+        "lip_sync_aligner": lip_sync_aligner,  # Use enhanced version
     }
     if tool_name not in tool_registry:
         raise ValueError(f"Unknown graph tool: {tool_name}")
@@ -154,6 +158,24 @@ def _select_character_profile(character_db: CharacterDBModel, scene_index: int) 
 
     character = character_db.characters[scene_index % len(character_db.characters)]
     return character.model_dump()
+
+
+def _scene_character_profiles(scene: SceneModel, character_db: CharacterDBModel) -> dict[str, dict[str, Any]]:
+    """Collect character profiles relevant to this scene for multi-speaker TTS."""
+    db_by_name = {
+        character.name.lower(): character.model_dump()
+        for character in character_db.characters
+        if character.name
+    }
+    scene_profiles: dict[str, dict[str, Any]] = {}
+
+    for beat in scene.dialogue_beats:
+        if isinstance(beat, str) and ":" in beat:
+            speaker = beat.split(":", 1)[0].strip()
+            if speaker and speaker.lower() in db_by_name:
+                scene_profiles[speaker] = db_by_name[speaker.lower()]
+
+    return scene_profiles
 
 
 def _map_visual_cue_assets(
@@ -243,8 +265,9 @@ def get_task_graph(
                         "agent": "voice_synthesis_agent",
                         "inputs": {
                             "dialogue_beats": scene.dialogue_beats,
+                            "scene_character_profiles": _scene_character_profiles(scene, character_db),
                         },
-                        "output": f"phase2_outputs/{scene.scene_id}.wav",
+                        "output": f"phase2_outputs/raw_scenes/{scene.scene_id}.wav",
                     },
                     "video": {
                         "agent": "video_generation_agent",
@@ -257,7 +280,7 @@ def get_task_graph(
                             ],
                             "character_profile": character_profile,
                         },
-                        "output": f"raw_scenes/{scene.scene_id}.mp4",
+                        "output": f"phase2_outputs/raw_scenes/{scene.scene_id}.mp4",
                     },
                 },
                 "asset_context": {
@@ -365,7 +388,7 @@ def _task_graph_node_factory(checkpoint_dir: str):
         pending_tasks: list[dict[str, Any]] = []
         for task in tasks:
             scene_id = task["scene_id"]
-            completed_output = Path(f"phase2_outputs/raw_scenes/{scene_id}.mp4")
+            completed_output = Path(f"phase2_outputs/{scene_id}_final.mp4")
             if completed_output.exists() and completed_output.stat().st_size > 0:
                 skipped_scenes.append(scene_id)
                 continue
@@ -412,74 +435,114 @@ def _voice_synth_node(state: BranchInputState) -> dict[str, Any]:
     task = state["scene_task"]
     scene_id = task["scene_id"]
     dialogue_beats = task["parallel_branches"]["audio"]["inputs"]["dialogue_beats"]
+    scene_character_profiles = task["parallel_branches"]["audio"]["inputs"].get("scene_character_profiles", {})
+    character_profile = task.get("asset_context", {}).get("character_profile", {})
 
-    synthesized_audio = _invoke_graph_tool(
-        "voice_cloning_synthesizer",
-        scene_id=scene_id,
-        dialogue_beats=dialogue_beats,
-        output_path=task["parallel_branches"]["audio"]["output"],
-    )
+    try:
+        synthesized_audio = _invoke_graph_tool(
+            "voice_cloning_synthesizer",
+            scene_id=scene_id,
+            dialogue_beats=dialogue_beats,
+            output_path=task["parallel_branches"]["audio"]["output"],
+            character_profile=character_profile,
+            scene_character_profiles=scene_character_profiles,
+        )
 
-    _commit_agent_checkpoint(
-        step="voice_synth_complete",
-        payload={
-            "scene_id": scene_id,
-            "audio_path": synthesized_audio,
-            "status": "completed",
-        },
-    )
-
-    return {
-        "voice_outputs": [
-            {
+        _commit_agent_checkpoint(
+            step="voice_synth_complete",
+            payload={
                 "scene_id": scene_id,
                 "audio_path": synthesized_audio,
                 "status": "completed",
-            }
-        ]
-    }
+            },
+        )
+
+        return {
+            "voice_outputs": [
+                {
+                    "scene_id": scene_id,
+                    "audio_path": synthesized_audio,
+                    "status": "completed",
+                }
+            ]
+        }
+    except Exception as e:
+        error_msg = f"Voice synthesis failed for {scene_id}: {str(e)}"
+        print(f"✗ {error_msg}")
+        _commit_agent_checkpoint(
+            step="voice_synth_error",
+            payload={
+                "scene_id": scene_id,
+                "error": error_msg,
+                "status": "failed",
+            },
+        )
+        return {
+            "voice_outputs": [],
+            "errors": [error_msg],
+        }
 
 
 def _video_gen_node(state: BranchInputState) -> dict[str, Any]:
     task = state["scene_task"]
     scene_id = task["scene_id"]
     reference_image_paths = task["parallel_branches"]["video"]["inputs"].get("reference_image_paths", [])
+    summary = task["parallel_branches"]["video"]["inputs"].get("summary", "")
+    visual_cues = task["parallel_branches"]["video"]["inputs"].get("visual_cues", [])
     character_profile = task["parallel_branches"]["video"]["inputs"].get("character_profile", {})
     image_assets_dir = task.get("asset_context", {}).get("image_assets_dir", "")
     dialogue_beats = task["parallel_branches"]["audio"]["inputs"].get("dialogue_beats", [])
     audio_path = task["parallel_branches"]["audio"]["output"]
 
-    generated_video, source_image_path = _invoke_graph_tool(
-        "video_generation_agent",
-        scene_id=scene_id,
-        output_path=task["parallel_branches"]["video"]["output"],
-        reference_image_paths=reference_image_paths,
-        character_profile=character_profile,
-        image_assets_dir=image_assets_dir,
-        dialogue_beats=dialogue_beats,
-        audio_path=audio_path,
-    )
+    try:
+        generated_video, source_image_path = _invoke_graph_tool(
+            "video_generation_agent",
+            scene_id=scene_id,
+            output_path=task["parallel_branches"]["video"]["output"],
+            summary=summary,
+            visual_cues=visual_cues,
+            reference_image_paths=reference_image_paths,
+            character_profile=character_profile,
+            image_assets_dir=image_assets_dir,
+            dialogue_beats=dialogue_beats,
+            audio_path=audio_path,
+        )
 
-    _commit_agent_checkpoint(
-        step="video_gen_complete",
-        payload={
-            "scene_id": scene_id,
-            "video_path": generated_video,
-            "source_image_path": source_image_path,
-            "status": "completed",
-        },
-    )
-
-    return {
-        "video_outputs": [
-            {
+        _commit_agent_checkpoint(
+            step="video_gen_complete",
+            payload={
                 "scene_id": scene_id,
                 "video_path": generated_video,
                 "source_image_path": source_image_path,
                 "status": "completed",
-            }
-        ]
-    }
+            },
+        )
+
+        return {
+            "video_outputs": [
+                {
+                    "scene_id": scene_id,
+                    "video_path": generated_video,
+                    "source_image_path": source_image_path,
+                    "status": "completed",
+                }
+            ]
+        }
+    except Exception as e:
+        error_msg = f"Video generation failed for {scene_id}: {str(e)}"
+        print(f"✗ {error_msg}")
+        _commit_agent_checkpoint(
+            step="video_gen_error",
+            payload={
+                "scene_id": scene_id,
+                "error": error_msg,
+                "status": "failed",
+            },
+        )
+        return {
+            "video_outputs": [],
+            "errors": [error_msg],
+        }
 
 
 def _face_swap_node_factory(checkpoint_dir: str):
@@ -508,34 +571,46 @@ def _face_swap_node_factory(checkpoint_dir: str):
             reference_image_paths = task.get("asset_context", {}).get("reference_image_paths", [])
             expected_image_path = reference_image_paths[0] if reference_image_paths else ""
             character_db_path = str(task.get("asset_context", {}).get("character_db_path", ""))
+            
             if not video_path:
-                errors.append(f"Missing video output for {scene_id}.")
+                error_msg = f"Missing video output for {scene_id}."
+                errors.append(error_msg)
+                print(f"✗ {error_msg}")
                 continue
 
-            mapped_video_path, identity_ok, validated_character, emotion_tag = _invoke_graph_tool(
-                "face_swap_agent",
-                scene_id=scene_id,
-                input_video_path=video_path,
-                output_path=f"phase2_outputs/face_swapped/{scene_id}.mp4",
-                scene_task=task,
-                character_db_path=character_db_path,
-            )
-            if not identity_ok:
-                errors.append(f"Identity validation failed for {scene_id}.")
+            try:
+                mapped_video_path, identity_ok, validated_character, emotion_tag = _invoke_graph_tool(
+                    "face_swap_agent",
+                    scene_id=scene_id,
+                    input_video_path=video_path,
+                    output_path=f"phase2_outputs/face_swapped/{scene_id}.mp4",
+                    scene_task=task,
+                    character_db_path=character_db_path,
+                )
+                
+                if not identity_ok:
+                    error_msg = f"Identity validation failed for {scene_id}."
+                    errors.append(error_msg)
+                    print(f"⚠ {error_msg}")
+                    # Continue anyway with the output
+                
+                face_swap_outputs.append(
+                    {
+                        "scene_id": scene_id,
+                        "video_path": mapped_video_path,
+                        "identity_validated": identity_ok,
+                        "expected_character": expected_character,
+                        "validated_character": validated_character,
+                        "emotion_tag": emotion_tag,
+                        "reference_image_path": expected_image_path,
+                        "status": "completed" if identity_ok else "partial",
+                    }
+                )
+            except Exception as e:
+                error_msg = f"Face swap failed for {scene_id}: {str(e)}"
+                errors.append(error_msg)
+                print(f"✗ {error_msg}")
                 continue
-
-            face_swap_outputs.append(
-                {
-                    "scene_id": scene_id,
-                    "video_path": mapped_video_path,
-                    "identity_validated": True,
-                    "expected_character": expected_character,
-                    "validated_character": validated_character,
-                    "emotion_tag": emotion_tag,
-                    "reference_image_path": expected_image_path,
-                    "status": "completed",
-                }
-            )
 
         memory["face_swap_complete"] = True
         snapshot_state: ParserState = {
@@ -592,23 +667,32 @@ def _lip_sync_node_factory(checkpoint_dir: str):
             video_path = face_by_scene.get(scene_id)
 
             if not audio_path or not video_path:
-                errors.append(f"Fusion inputs missing for {scene_id}.")
+                error_msg = f"Fusion inputs missing for {scene_id}."
+                errors.append(error_msg)
+                print(f"✗ {error_msg}")
                 continue
 
-            fused_path = _invoke_graph_tool(
-                "lip_sync_aligner",
-                scene_id=scene_id,
-                audio_path=audio_path,
-                video_path=video_path,
-                output_path=f"phase2_outputs/raw_scenes/{scene_id}.mp4",
-            )
-            fused_outputs.append(
-                {
-                    "scene_id": scene_id,
-                    "output_path": fused_path,
-                    "status": "completed",
-                }
-            )
+            try:
+                fused_path = _invoke_graph_tool(
+                    "lip_sync_aligner",
+                    scene_id=scene_id,
+                    audio_path=audio_path,
+                    video_path=video_path,
+                    output_path=f"phase2_outputs/{scene_id}_final.mp4",
+                    use_wav2lip=True,
+                )
+                fused_outputs.append(
+                    {
+                        "scene_id": scene_id,
+                        "output_path": fused_path,
+                        "status": "completed",
+                    }
+                )
+            except Exception as e:
+                error_msg = f"Lip-sync failed for {scene_id}: {str(e)}"
+                errors.append(error_msg)
+                print(f"✗ {error_msg}")
+                continue
 
         memory["lip_sync_complete"] = True
         snapshot_state: ParserState = {
